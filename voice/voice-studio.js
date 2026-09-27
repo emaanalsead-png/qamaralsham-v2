@@ -812,4 +812,431 @@
         return Promise.resolve().then(function () {
             const uid = _getCurrentUid();
             if (!uid || !rid) throw new Error('بيانات ناقصة');
-            return window.Q
+            return window.QamarFB.remove(CONFIG.RECORDINGS_PATH + '/' + uid + '/' + rid)
+                .then(function () {
+                    _emit('studio:recordingDeleted', { rid: rid });
+                    return { ok: true };
+                });
+        });
+    }
+
+    function listAllRecordings(uid) {
+        return Promise.resolve().then(function () {
+            if (!_isKing()) throw new Error('فقط الملك');
+            if (!uid) throw new Error('uid مطلوب');
+            return window.QamarFB.get(CONFIG.RECORDINGS_PATH + '/' + uid).then(function (data) {
+                if (!data) return [];
+                return Object.keys(data).map(function (rid) {
+                    return Object.assign({ _id: rid }, data[rid]);
+                }).sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+            });
+        });
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* UI Panel                                        */
+    /* ══════════════════════════════════════════════ */
+    function _findPanelParent() {
+        return document.getElementById('chat-area') ||
+               document.querySelector('.chat-area') ||
+               document.querySelector('.chat-container') ||
+               document.body;
+    }
+
+    function _buildPanel() {
+        if (State.panelEl && State.panelEl.parentNode) return State.panelEl;
+
+        const parent = _findPanelParent();
+        const panel = document.createElement('div');
+        panel.id = 'studio-panel';
+        panel.className = 'studio-panel';
+        panel.style.cssText =
+            'position:fixed;inset:0;z-index:13500;' +
+            'background:linear-gradient(135deg,rgba(10,10,21,0.96),rgba(17,7,36,0.96));' +
+            'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);' +
+            'display:flex;flex-direction:column;align-items:center;' +
+            'justify-content:center;padding:20px;direction:rtl;' +
+            'font-family:inherit;color:#f3f4f6;overflow-y:auto;';
+
+        panel.innerHTML = '';
+
+        // رأس
+        const header = document.createElement('div');
+        header.style.cssText = 'text-align:center;margin-bottom:20px;';
+        header.innerHTML =
+            '<div style="font-size:42px;margin-bottom:6px;">🎙️</div>' +
+            '<div style="font-size:20px;font-weight:900;color:#ffd700;">استوديو التسجيل</div>' +
+            '<div style="font-size:12px;color:#9ca3af;margin-top:4px;">موسيقار الشام في خدمتك</div>';
+        panel.appendChild(header);
+
+        // مؤقت
+        const timer = document.createElement('div');
+        timer.id = 'studio-timer';
+        timer.style.cssText =
+            'font-family:monospace;font-size:34px;font-weight:900;color:#ffd700;' +
+            'margin-bottom:16px;letter-spacing:2px;';
+        timer.textContent = '00:00';
+        panel.appendChild(timer);
+
+        // زر التسجيل الرئيسي (كبير)
+        const recordBtn = _buildBigButton({
+            id: 'record',
+            label: 'تسجيل',
+            icon: '🎙️',
+            bg: 'linear-gradient(135deg,#ff4444,#cc0000)',
+            size: 110,
+            onclick: function (e) {
+                e.preventDefault();
+                _handleButton('record', e.currentTarget, function () {
+                    if (State.recording) {
+                        stopRecording().catch(function (err) { _toast(err.message); });
+                    } else {
+                        startRecording().catch(function (err) { _toast(err.message); });
+                    }
+                });
+            }
+        });
+        panel.appendChild(recordBtn);
+
+        // أزرار مساعدة (صف)
+        const row1 = document.createElement('div');
+        row1.style.cssText = 'display:flex;gap:14px;margin-top:20px;flex-wrap:wrap;justify-content:center;';
+
+        row1.appendChild(_buildBigButton({
+            id: 'pause', label: 'إيقاف مؤقت', icon: '⏸️',
+            bg: 'linear-gradient(135deg,#ffa500,#cc7700)', size: 70,
+            onclick: function (e) {
+                e.preventDefault();
+                _handleButton('pause', e.currentTarget, function () {
+                    if (State.paused) resumeRecording(); else pauseRecording();
+                });
+            }
+        }));
+
+        row1.appendChild(_buildBigButton({
+            id: 'preview', label: 'معاينة', icon: '▶️',
+            bg: 'linear-gradient(135deg,#3b82f6,#1e40af)', size: 70,
+            onclick: function (e) {
+                e.preventDefault();
+                _handleButton('preview', e.currentTarget, function () {
+                    preview();
+                });
+            }
+        }));
+
+        row1.appendChild(_buildBigButton({
+            id: 'download', label: 'تحميل', icon: '⬇️',
+            bg: 'linear-gradient(135deg,#4ade80,#166534)', size: 70,
+            onclick: function (e) {
+                e.preventDefault();
+                _handleButton('download', e.currentTarget, function () {
+                    download();
+                });
+            }
+        }));
+
+        row1.appendChild(_buildBigButton({
+            id: 'discard', label: 'إلغاء', icon: '🗑️',
+            bg: 'linear-gradient(135deg,#6b7280,#374151)', size: 70,
+            onclick: function (e) {
+                e.preventDefault();
+                _handleButton('discard', e.currentTarget, function () {
+                    if (window.confirm) {
+                        if (!window.confirm('حذف التسجيل الحالي؟')) return;
+                    }
+                    cancelRecording();
+                    discard();
+                });
+            }
+        }));
+
+        panel.appendChild(row1);
+
+        // المؤثرات (6 sliders)
+        const fxWrap = document.createElement('div');
+        fxWrap.style.cssText =
+            'display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));' +
+            'gap:12px;margin-top:24px;max-width:600px;width:100%;';
+
+        const effectsList = [
+            { id: 'bass',    label: 'Bass',   icon: '🎚️', min: -40, max: 40, def: 0 },
+            { id: 'mid',     label: 'Mid',    icon: '🎚️', min: -40, max: 40, def: 0 },
+            { id: 'treble',  label: 'Treble', icon: '🎚️', min: -40, max: 40, def: 0 },
+            { id: 'echo',    label: 'صدى',    icon: '🔊', min: 0,  max: 100, def: 0 },
+            { id: 'reverb',  label: 'رنين',   icon: '🏛️', min: 0,  max: 100, def: 0 },
+            { id: 'volume',  label: 'الصوت',  icon: '🔉', min: 0,  max: 100, def: 100 }
+        ];
+
+        effectsList.forEach(function (fx) {
+            const wrap = document.createElement('div');
+            wrap.style.cssText =
+                'background:rgba(255,255,255,0.04);border:1px solid rgba(212,175,55,0.2);' +
+                'border-radius:12px;padding:10px;';
+
+            const head = document.createElement('div');
+            head.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px;';
+            head.innerHTML =
+                '<span style="font-size:14px">' + fx.icon + '</span>' +
+                '<span style="font-size:12px;font-weight:900;color:#ffd700;">' + fx.label + '</span>' +
+                '<span class="fx-val" data-fx="' + fx.id + '" style="margin-right:auto;font-size:11px;color:#9ca3af;">' + fx.def + '</span>';
+            wrap.appendChild(head);
+
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = fx.min;
+            slider.max = fx.max;
+            slider.value = State.effects[fx.id];
+            slider.dataset.fx = fx.id;
+            slider.style.cssText = 'width:100%;cursor:pointer;';
+            slider.addEventListener('input', function (ev) {
+                const v = Number(ev.target.value);
+                setEffect(fx.id, v);
+                const vEl = wrap.querySelector('.fx-val');
+                if (vEl) vEl.textContent = v;
+            });
+            slider.addEventListener('click', function (ev) {
+                ev.stopPropagation();
+            });
+            wrap.appendChild(slider);
+
+            // زر الشرح للبوت
+            wrap.addEventListener('click', function (ev) {
+                if (ev.target === slider) return;
+                _handleButton(fx.id, wrap, null);
+            });
+
+            fxWrap.appendChild(wrap);
+        });
+
+        panel.appendChild(fxWrap);
+
+        // زر الإغلاق
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.textContent = '✕  إغلاق الاستوديو';
+        closeBtn.style.cssText =
+            'margin-top:24px;padding:10px 22px;border-radius:12px;' +
+            'background:rgba(255,68,68,0.15);color:#ff8888;' +
+            'border:1px solid rgba(255,68,68,0.4);font-family:inherit;' +
+            'font-weight:900;font-size:13px;cursor:pointer;';
+        closeBtn.onclick = function (e) {
+            e.preventDefault();
+            close();
+        };
+        panel.appendChild(closeBtn);
+
+        parent.appendChild(panel);
+        State.panelEl = panel;
+        return panel;
+    }
+
+    function _buildBigButton(opts) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'studio-btn-' + opts.id;
+        btn.dataset.btnId = opts.id;
+        btn.style.cssText =
+            'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+            'gap:6px;width:' + opts.size + 'px;height:' + opts.size + 'px;' +
+            'border-radius:50%;background:' + opts.bg + ';' +
+            'color:#fff;border:none;cursor:pointer;font-family:inherit;' +
+            'box-shadow:0 8px 24px rgba(0,0,0,0.5);transition:transform 0.15s;';
+        btn.innerHTML =
+            '<div style="font-size:' + (opts.size > 90 ? 36 : 26) + 'px;line-height:1;">' + opts.icon + '</div>' +
+            '<div style="font-size:' + (opts.size > 90 ? 13 : 11) + 'px;font-weight:900;">' + opts.label + '</div>';
+        btn.addEventListener('mouseenter', function () { btn.style.transform = 'scale(1.06)'; });
+        btn.addEventListener('mouseleave', function () { btn.style.transform = 'scale(1)'; });
+        btn.addEventListener('click', opts.onclick);
+        return btn;
+    }
+
+    // معالج موحد: عرض البوت + تنفيذ الإجراء
+    function _handleButton(buttonId, anchorEl, action) {
+        // اعرض التوستيب أولاً إذا لم يُشاهد
+        if (!State.seenTips[buttonId] && CONFIG.BOT_TIPS[buttonId]) {
+            _showTip(CONFIG.BOT_TIPS[buttonId], anchorEl, function () {
+                _markTipSeen(buttonId);
+                if (action) try { action(); } catch (e) {}
+            });
+            return;
+        }
+        // نفّذ الإجراء
+        if (action) try { action(); } catch (e) { Logger.warn('action error:', e.message); }
+    }
+
+    function _updateTimerEl() {
+        const el = document.getElementById('studio-timer');
+        if (!el) return;
+        const ms = State.durationMs || 0;
+        el.textContent = _fmtTime(ms);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Open / Close                                    */
+    /* ══════════════════════════════════════════════ */
+    function open() {
+        return Promise.resolve().then(function () {
+            if (!_canUseStudio()) {
+                throw new Error('هذه الميزة لمستوى 80+');
+            }
+            if (State.opened) return { ok: true, already: true };
+
+            State.opened = true;
+            _loadSeenTips();
+            _lockSession();
+            _buildPanel();
+            _updateTimerEl();
+
+            // استمع للـ tick
+            if (State.listeners.indexOf(_updateTimerEl) === -1) {
+                onStudioEvent(function (ev) {
+                    if (ev.type === 'studio:tick') _updateTimerEl();
+                });
+            }
+
+            _emit('studio:opened', {});
+            Logger.info('🎙️ Studio opened');
+            return { ok: true };
+        }).catch(function (e) {
+            Logger.warn('open failed:', e.message);
+            _emit('studio:error', { error: e.message });
+            throw e;
+        });
+    }
+
+    function close() {
+        return Promise.resolve().then(function () {
+            if (!State.opened) return { ok: true };
+            // نظّف
+            try { cancelRecording(); } catch (e) {}
+            try { discard(); } catch (e) {}
+            _closeTip();
+            _unlockSession();
+            if (State.panelEl && State.panelEl.parentNode) {
+                State.panelEl.parentNode.removeChild(State.panelEl);
+            }
+            State.panelEl = null;
+            State.opened = false;
+            State.seenTips = {}; // يُعاد تحميله في الدخول القادم
+            _emit('studio:closed', {});
+            Logger.info('🎙️ Studio closed');
+            return { ok: true };
+        });
+    }
+
+    function isOpen() { return State.opened; }
+    function isRecording() { return State.recording; }
+
+    /* ══════════════════════════════════════════════ */
+    /* Init                                            */
+    /* ══════════════════════════════════════════════ */
+    function _init() {
+        if (State._initialized) return;
+        State._initialized = true;
+
+        // عند تغيير الغرفة → أغلق
+        if (window.EventBus) {
+            window.EventBus.on('room:changed', function () {
+                if (State.opened) close();
+            });
+        }
+        // عند تسجيل الخروج
+        if (window.QamarAuth && window.QamarAuth.onAuthChange) {
+            window.QamarAuth.onAuthChange(function (p) {
+                if (!p.isLoggedIn && State.opened) close();
+            });
+        }
+        // عند إغلاق الصفحة
+        if (typeof window !== 'undefined') {
+            window.addEventListener('beforeunload', function () {
+                try { cancelRecording(); } catch (e) {}
+                _unlockSession();
+            });
+        }
+
+        Logger.info('📦 [voice-studio.js] initialized');
+    }
+
+    if (window.EventBus) {
+        window.EventBus.once('boot:ready', function () {
+            setTimeout(_init, 2800);
+        });
+    } else {
+        setTimeout(_init, 9000);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Status                                          */
+    /* ══════════════════════════════════════════════ */
+    function getStatus() {
+        return {
+            initialized: State._initialized,
+            opened: State.opened,
+            recording: State.recording,
+            paused: State.paused,
+            duration: State.durationMs,
+            hasBlob: !!State.currentBlob,
+            canUse: _canUseStudio(),
+            myLevel: _myLevel(),
+            isKing: _isKing(),
+            effects: Object.assign({}, State.effects),
+            seenTipsCount: Object.keys(State.seenTips).length,
+            mimeType: State.mimeType
+        };
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Exports                                         */
+    /* ══════════════════════════════════════════════ */
+    window.QamarVoiceStudio = {
+        CONFIG: CONFIG,
+
+        // Lifecycle
+        open: open,
+        close: close,
+        isOpen: isOpen,
+        isRecording: isRecording,
+
+        // Recording
+        startRecording: startRecording,
+        pauseRecording: pauseRecording,
+        resumeRecording: resumeRecording,
+        stopRecording: stopRecording,
+        cancelRecording: cancelRecording,
+
+        // Effects
+        setEffect: setEffect,
+        setBass: setBass,
+        setMid: setMid,
+        setTreble: setTreble,
+        setEcho: setEcho,
+        setReverb: setReverb,
+        setVolume: setVolume,
+        resetEffects: resetEffects,
+        getEffects: getEffects,
+
+        // Preview / Download
+        preview: preview,
+        download: download,
+        discard: discard,
+        getCurrentBlob: getCurrentBlob,
+        getCurrentUrl: getCurrentUrl,
+
+        // Share
+        shareToPM: shareToPM,
+        shareToRoom: shareToRoom,
+
+        // Recordings
+        getRecordings: getRecordings,
+        deleteRecording: deleteRecording,
+        listAllRecordings: listAllRecordings,
+
+        // Events
+        onStudioEvent: onStudioEvent,
+
+        // Debug
+        getStatus: getStatus
+    };
+
+    Logger.info('📦 [voice-studio.js] loaded | min-level:', CONFIG.MIN_LEVEL);
+})();
