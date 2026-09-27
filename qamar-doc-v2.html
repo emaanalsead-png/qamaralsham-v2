@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📘 قمر الشام v2 — الوثيقة الكاملة المحدّثة</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#d4af37;--gold-light:#ffd700;--gold-dark:#b8860b;
+  --bg:#050508;--bg-card:#0a0a15;--bg-deep:#110724;
+  --text:#f3f4f6;--text-dim:#9ca3af;--text-muted:#6b7280;
+  --border:rgba(212,175,55,0.3);--border-light:rgba(255,255,255,0.08);
+  --success:#4ade80;--danger:#ff4444;--warning:#ff9800;
+  --info:#3b82f6;--purple:#a855f7;
+  --radius:12px;--radius-lg:20px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Cairo',system-ui,sans-serif;
+  background:linear-gradient(180deg,#050508 0%,#0a0a15 50%,#050508 100%);
+  color:var(--text);line-height:1.7;direction:rtl;
+  padding:20px 12px 80px;min-height:100vh;
+}
+.container{max-width:1100px;margin:0 auto}
+
+/* Header */
+.header{
+  background:linear-gradient(135deg,#0a0a15 0%,#1a0e2e 50%,#0a0a15 100%);
+  border:2px solid var(--gold);border-radius:var(--radius-lg);
+  padding:36px 24px 28px;text-align:center;margin-bottom:24px;
+  position:relative;overflow:hidden;
+}
+.header::before{
+  content:'';position:absolute;inset:0;
+  background-image:
+    radial-gradient(circle at 15% 20%,rgba(255,215,0,.15) 2px,transparent 3px),
+    radial-gradient(circle at 85% 80%,rgba(255,215,0,.1) 1px,transparent 2px);
+  background-size:200px 200px,180px 180px;pointer-events:none;
+}
+.header h1{
+  font-size:28px;color:var(--gold-light);font-weight:900;
+  margin-bottom:8px;text-shadow:0 0 30px rgba(255,215,0,.5);
+  position:relative;
+}
+.header .subtitle{color:var(--text-dim);font-size:13px;position:relative}
+.header .badge{
+  display:inline-block;padding:5px 14px;background:rgba(255,215,0,.15);
+  border:1px solid var(--gold);border-radius:20px;color:var(--gold-light);
+  font-size:12px;font-weight:900;margin-top:12px;position:relative;
+}
+.header .progress-bar{
+  margin-top:16px;height:8px;background:rgba(0,0,0,.5);
+  border-radius:4px;overflow:hidden;position:relative;max-width:500px;
+  margin-left:auto;margin-right:auto;
+}
+.header .progress-fill{
+  height:100%;background:linear-gradient(90deg,#4ade80,#22c55e);
+  width:52%;transition:width 0.5s;
+}
+
+/* TOC */
+.toc{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:14px;padding:20px;margin-bottom:24px;
+}
+.toc h2{
+  color:var(--gold-light);font-size:18px;margin-bottom:14px;
+  display:flex;align-items:center;gap:8px;
+}
+.toc ol{
+  list-style:none;counter-reset:toc;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:6px;
+}
+.toc ol li{
+  counter-increment:toc;padding:6px 10px;
+  background:rgba(255,255,255,.03);border-radius:6px;
+  border-right:3px solid transparent;transition:all .2s;
+}
+.toc ol li::before{
+  content:counter(toc) ". ";color:var(--gold);font-weight:900;margin-left:5px;
+}
+.toc ol li:hover{background:rgba(255,215,0,.08);border-right-color:var(--gold)}
+.toc ol li a{
+  color:var(--text);text-decoration:none;font-weight:700;font-size:13px;
+}
+
+/* Section */
+.section{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:14px;padding:22px;margin-bottom:22px;
+}
+.section h2{
+  color:var(--gold-light);font-size:20px;font-weight:900;
+  margin-bottom:16px;padding-bottom:12px;
+  border-bottom:2px solid rgba(255,215,0,.2);
+  display:flex;align-items:center;gap:10px;
+}
+.section h3{
+  color:var(--gold);font-size:15px;margin:18px 0 10px;
+  display:flex;align-items:center;gap:6px;
+}
+.section h4{
+  color:var(--gold-light);font-size:13px;margin:14px 0 8px;
+}
+.section p{color:var(--text-dim);font-size:13px;margin-bottom:10px}
+.section ul,.section ol{padding-right:22px;margin:10px 0}
+.section li{color:var(--text-dim);margin-bottom:5px;font-size:13px}
+.section li strong{color:var(--text)}
+
+/* Tables */
+table{
+  width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px;
+  background:rgba(0,0,0,.3);border-radius:10px;overflow:hidden;
+}
+th{
+  background:linear-gradient(135deg,rgba(255,215,0,.2),rgba(212,175,55,.1));
+  color:var(--gold-light);padding:10px 12px;text-align:right;
+  font-weight:900;font-size:11.5px;border-bottom:1px solid var(--border);
+}
+td{
+  padding:9px 12px;border-bottom:1px solid var(--border-light);
+  vertical-align:top;font-size:12px;
+}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,215,0,.03)}
+
+/* Alerts */
+.alert{
+  padding:12px 16px;border-radius:10px;margin:12px 0;
+  border-right:4px solid;font-size:13px;line-height:1.6;
+}
+.alert-info{background:rgba(59,130,246,.1);border-color:var(--info);color:#bfdbfe}
+.alert-warning{background:rgba(245,158,11,.1);border-color:var(--warning);color:#fde68a}
+.alert-danger{background:rgba(239,68,68,.1);border-color:var(--danger);color:#fecaca}
+.alert-success{background:rgba(34,197,94,.1);border-color:var(--success);color:#bbf7d0}
+.alert-purple{background:rgba(168,85,247,.1);border-color:var(--purple);color:#e9d5ff}
+
+/* Stats Grid */
+.stats-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:10px;margin:14px 0;
+}
+.stat-box{
+  background:linear-gradient(135deg,rgba(255,215,0,.08),rgba(255,215,0,.02));
+  border:1px solid var(--border);border-radius:10px;
+  padding:14px;text-align:center;
+}
+.stat-box .val{
+  font-size:24px;font-weight:900;color:var(--gold-light);line-height:1.1;
+}
+.stat-box .lbl{
+  font-size:11px;color:var(--text-dim);margin-top:4px;font-weight:700;
+}
+.stat-box.done .val{color:var(--success)}
+.stat-box.pending .val{color:var(--warning)}
+
+/* Badges */
+.badge-status{
+  display:inline-block;padding:2px 9px;border-radius:12px;
+  font-size:10px;font-weight:900;white-space:nowrap;
+}
+.badge-done{background:rgba(34,197,94,.2);color:#4ade80;border:1px solid rgba(34,197,94,.5)}
+.badge-pending{background:rgba(245,158,11,.2);color:#fbbf24;border:1px solid rgba(245,158,11,.5)}
+.badge-bug{background:rgba(239,68,68,.2);color:#ff8888;border:1px solid rgba(239,68,68,.5)}
+.badge-new{background:rgba(168,85,247,.2);color:#c084fc;border:1px solid rgba(168,85,247,.5)}
+.badge-info{background:rgba(59,130,246,.2);color:#60a5fa;border:1px solid rgba(59,130,246,.5)}
+
+.footer{
+  text-align:center;padding:30px 20px;color:#666;font-size:11px;
+  border-top:1px solid var(--border-light);margin-top:40px;
+}
+
+/* Code */
+.inline-code{
+  background:rgba(168,85,247,.15);border:1px solid rgba(168,85,247,.3);
+  padding:1px 6px;border-radius:5px;color:#c084fc;
+  font-family:'Courier New',monospace;font-size:11px;
+  direction:ltr;display:inline-block;
+}
+
+/* Timeline */
+.timeline{
+  position:relative;padding-right:30px;margin:16px 0;
+}
+.timeline::before{
+  content:'';position:absolute;right:10px;top:0;bottom:0;
+  width:2px;background:linear-gradient(180deg,var(--gold),transparent);
+}
+.timeline-item{
+  position:relative;padding:10px 0 10px 0;padding-right:24px;
+}
+.timeline-item::before{
+  content:'';position:absolute;right:2px;top:16px;
+  width:16px;height:16px;border-radius:50%;
+  background:var(--gold);border:3px solid var(--bg-card);
+  box-shadow:0 0 0 2px var(--gold);
+}
+.timeline-item.done::before{background:var(--success);box-shadow:0 0 0 2px var(--success)}
+.timeline-item .time{color:var(--gold);font-size:11px;font-weight:900;margin-bottom:4px}
+.timeline-item .title{color:var(--text);font-weight:700;font-size:13px;margin-bottom:4px}
+.timeline-item .desc{color:var(--text-dim);font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- ═══ Header ═══ -->
+<div class="header">
+  <h1>📘 قمر الشام v2 — الوثيقة الكاملة المحدّثة</h1>
+  <p class="subtitle">منصة دردشة عربية — Firebase مجاني — يعمل في سوريا</p>
+  <div class="badge">📅 نسخة 2.0 — 32 من 61 ملف مكتمل (52%)</div>
+  <div class="progress-bar"><div class="progress-fill"></div></div>
+</div>
+
+<!-- ═══ TOC ═══ -->
+<div class="toc">
+  <h2>📋 الفهرس</h2>
+  <ol>
+    <li><a href="#s0">حالة المشروع الحالية</a></li>
+    <li><a href="#s1">القواعد الصارمة</a></li>
+    <li><a href="#s2">البنية النهائية + التقدم</a></li>
+    <li><a href="#s3">الروابط المستخدمة</a></li>
+    <li><a href="#s4">الملفات المكتملة (32)</a></li>
+    <li><a href="#s5">القرارات الجديدة أثناء البناء</a></li>
+    <li><a href="#s6">الملفات المتبقية (29)</a></li>
+    <li><a href="#s7">المهام المؤجلة</a></li>
+    <li><a href="#s8">Firebase Paths + Rules</a></li>
+    <li><a href="#s9">القياسات المرجعية</a></li>
+    <li><a href="#s10">ملاحظات المحادثة الجديدة</a></li>
+  </ol>
+</div>
+
+<!-- ═══ 0. حالة المشروع ═══ -->
+<div class="section" id="s0">
+  <h2>🎯 0. حالة المشروع الحالية</h2>
+
+  <div class="stats-grid">
+    <div class="stat-box done"><div class="val">32</div><div class="lbl">ملف مكتمل</div></div>
+    <div class="stat-box pending"><div class="val">29</div><div class="lbl">ملف متبقٍ</div></div>
+    <div class="stat-box"><div class="val">52%</div><div class="lbl">نسبة الإنجاز</div></div>
+    <div class="stat-box"><div class="val">8</div><div class="lbl">مجلدات مكتملة</div></div>
+    <div class="stat-box"><div class="val">0$</div><div class="lbl">التكلفة</div></div>
+  </div>
+
+  <h3>✅ المجلدات المكتملة بالكامل:</h3>
+  <ul>
+    <li>✅ <strong>core/</strong> (5 ملفات)</li>
+    <li>✅ <strong>firebase/</strong> (4 ملفات)</li>
+    <li>✅ <strong>auth/</strong> (4 ملفات)</li>
+    <li>✅ <strong>security/</strong> (5 ملفات)</li>
+    <li>✅ <strong>chat/</strong> (4 ملفات)</li>
+    <li>✅ <strong>rooms/</strong> (3 ملفات)</li>
+    <li>✅ <strong>pm/</strong> (4 ملفات)</li>
+    <li>✅ <strong>voice/</strong> (3 ملفات)</li>
+  </ul>
+
+  <div class="alert alert-success">
+    <strong>🎉 ما تم اختباره بنجاح:</strong><br>
+    • 32 ملف تُحمَّل تلقائياً في اللوحة<br>
+    • 14 نظاماً أساسياً يعمل<br>
+    • Firebase متصل<br>
+    • Anonymous Auth يعمل<br>
+    • ALL SYSTEMS GREEN ✅
+  </div>
+</div>
+
+<!-- ═══ 1. القواعد ═══ -->
+<div class="section" id="s1">
+  <h2>⚠️ 1. القواعد الصارمة</h2>
+
+  <h3>القاعدة 1: 0$ تكلفة — دائماً</h3>
+  <table>
+    <thead><tr><th>الخدمة</th><th>الحد المجاني</th><th>الاستخدام</th></tr></thead>
+    <tbody>
+      <tr><td>Firebase Realtime DB</td><td>1GB + 10GB/شهر</td><td>الدردشة</td></tr>
+      <tr><td>Firebase Auth</td><td>لا حد</td><td>المصادقة</td></tr>
+      <tr><td>GitHub Pages</td><td>لا حد</td><td>الاستضافة</td></tr>
+      <tr><td>Telegram Bot</td><td>لا حد</td><td>رفع الملفات</td></tr>
+      <tr><td>imgbb</td><td>لا حد</td><td>الصور</td></tr>
+      <tr><td>jsDelivr</td><td>لا حد</td><td>الإطارات + CDN</td></tr>
+      <tr><td>OpenRelay TURN</td><td>20GB/شهر</td><td>WebRTC</td></tr>
+    </tbody>
+  </table>
+
+  <h3>القاعدة 2: يعمل في سوريا</h3>
+  <ul>
+    <li>✅ Firebase متاح</li>
+    <li>✅ GitHub Pages متاح</li>
+    <li>✅ Telegram متاح</li>
+    <li>❌ ممنوع: Agora، Cloudflare TURN</li>
+  </ul>
+
+  <h3>القاعدة 3: العمل على الجوال</h3>
+  <ul>
+    <li>❌ لا F12 / DevTools / Console</li>
+    <li>✅ كل شيء بالإيماءات واللمس</li>
+    <li>✅ كل زر ≥ 40×40 بكسل</li>
+    <li>✅ التشخيص عبر زر 🐛 (للملك)</li>
+  </ul>
+
+  <h3>القاعدة 4: دعم الإنترنت الضعيف</h3>
+  <ul>
+    <li>حجم كل ملف JS &lt; 30 KB</li>
+    <li>ضغط الصور تلقائياً قبل الرفع</li>
+    <li>Cache قوي (Service Worker)</li>
+    <li>Retry تلقائي عند الفشل</li>
+    <li>Timeouts مرنة (30-60s)</li>
+  </ul>
+
+  <h3>القاعدة 5: رقابة الملك — أولوية قصوى</h3>
+  <ul>
+    <li>✅ تعمل بدون الملك متصلاً (Bot JS في أي تبويب)</li>
+    <li>✅ محمية بـ Firebase Rules</li>
+    <li>✅ مخفية عن غير الملك</li>
+    <li>✅ كل عملية في audit_log</li>
+  </ul>
+
+  <h3>القاعدة 6: الكود الكامل — دائماً</h3>
+  <div class="alert alert-danger">
+    <strong>❌ ممنوع:</strong> "أضف هذا السطر" أو "استبدل هذا"<br>
+    <strong>✅ المسموح:</strong> الملف كامل جاهز للنسخ
+  </div>
+
+  <h3>القاعدة 7: مراجعة قبل البناء</h3>
+  <ul>
+    <li>📖 اقرأ فصل الملف في هذه الوثيقة</li>
+    <li>❓ أطرح أسئلة توضيحية</li>
+    <li>✅ تأكد من الفهم مع المستخدم</li>
+    <li>🎯 ثم ابدأ البناء</li>
+  </ul>
+</div>
+
+<!-- ═══ 2. البنية ═══ -->
+<div class="section" id="s2">
+  <h2>📁 2. البنية النهائية + التقدم</h2>
+
+  <h3>الهيكل الكامل (61 ملف):</h3>
+
+  <h4>✅ core/ (5/5)</h4>
+  <ul>
+    <li>✅ config.js — Firebase init</li>
+    <li>✅ constants.js — الثوابت</li>
+    <li>✅ utils.js — 30+ helper</li>
+    <li>✅ state.js — EventBus + AppState</li>
+    <li>✅ boot.js — orchestration</li>
+  </ul>
+
+  <h4>✅ firebase/ (4/4)</h4>
+  <ul>
+    <li>✅ firebase.js — QamarFB (wrapper)</li>
+    <li>✅ optimizers.js — IndexedDB + batch</li>
+    <li>✅ resilience.js — retry + offline</li>
+    <li>✅ cleaners.js — تنظيف تلقائي (8 مهام)</li>
+  </ul>
+
+  <h4>✅ auth/ (4/4)</h4>
+  <ul>
+    <li>✅ auth.js — Anonymous + Email/Password</li>
+    <li>✅ session.js — جلسة 24 ساعة</li>
+    <li>✅ identity.js — 23 حقل بروفايل</li>
+    <li>✅ ranks.js — رتب + 40 صلاحية</li>
+  </ul>
+
+  <h4>✅ security/ (5/5)</h4>
+  <ul>
+    <li>✅ device-guard.js — بصمة (Canvas + Audio + Hardware)</li>
+    <li>✅ audit.js — سجل شامل (~35 نوع)</li>
+    <li>✅ bans.js — حظر مؤقت/دائم + طرد جهاز</li>
+    <li>✅ reports.js — تقارير (80+)</li>
+    <li>✅ suspects.js — مشبوهون (King فقط)</li>
+  </ul>
+
+  <h4>✅ chat/ (4/4)</h4>
+  <ul>
+    <li>✅ chat.js — إرسال/استقبال + همس</li>
+    <li>✅ chat-input.js — حقل + رد + مسودة</li>
+    <li>✅ chat-ui.js — render + long-press + reactions</li>
+    <li>✅ chat-effects.js — 42 نمط اسم</li>
+  </ul>
+
+  <h4>✅ rooms/ (3/3)</h4>
+  <ul>
+    <li>✅ rooms.js — تنقل + إنشاء/حذف (King)</li>
+    <li>✅ room-settings.js — إعدادات غرفة</li>
+    <li>✅ room-voice.js — مايكات + heartbeat</li>
+  </ul>
+
+  <h4>✅ pm/ (4/4)</h4>
+  <ul>
+    <li>✅ pm.js — رسائل خاصة (WhatsApp-style)</li>
+    <li>✅ pm-archiver.js — أرشفة تلقائية</li>
+    <li>✅ pm-monitor.js — King يقرأ الكل</li>
+    <li>✅ pm-voice.js — صوتيات (تُسمع مرة)</li>
+  </ul>
+
+  <h4>✅ voice/ (3/3)</h4>
+  <ul>
+    <li>✅ voice-system.js — WebRTC Mesh</li>
+    <li>✅ voice-studio.js — استوديو (80+) + 6 مؤثرات</li>
+    <li>✅ voice-monitor.js — مراقبة مشبوهين + Telegram</li>
+  </ul>
+
+  <h4>⏳ bots/ (0/4)</h4>
+  <ul>
+    <li>⏳ bots.js</li>
+    <li>⏳ bot-commands.js</li>
+    <li>⏳ bot-training.js</li>
+    <li>⏳ guardian-inbox.js</li>
+  </ul>
+
+  <h4>⏳ king/ (0/3)</h4>
+  <ul>
+    <li>⏳ king-room.js</li>
+    <li>⏳ king-actions.js</li>
+    <li>⏳ king-queens.js</li>
+  </ul>
+
+  <h4>⏳ stories/ (0/2)</h4>
+  <ul>
+    <li>⏳ stories.js</li>
+    <li>⏳ stories-cleaner.js</li>
+  </ul>
+
+  <h4>⏳ media/ (0/4)</h4>
+  <ul>
+    <li>⏳ uploader.js</li>
+    <li>⏳ media-picker.js</li>
+    <li>⏳ paint.js</li>
+    <li>⏳ styled-messages.js</li>
+  </ul>
+
+  <h4>⏳ effects/ (0/2)</h4>
+  <ul>
+    <li>⏳ name-effects.js</li>
+    <li>⏳ frames-engine.js</li>
+  </ul>
+
+  <h4>⏳ notifications/ (0/2)</h4>
+  <ul>
+    <li>⏳ notifications.js</li>
+    <li>⏳ room-alerts.js</li>
+  </ul>
+
+  <h4>⏳ ui/ (0/4)</h4>
+  <ul>
+    <li>⏳ ui-core.js</li>
+    <li>⏳ ui-nav.js</li>
+    <li>⏳ ui-input.js</li>
+    <li>⏳ ui-mobile.js</li>
+  </ul>
+
+  <h4>⏳ guest/ (0/1)</h4>
+  <ul><li>⏳ guest.js</li></ul>
+
+  <h4>⏳ social/ (0/2)</h4>
+  <ul>
+    <li>⏳ social.js</li>
+    <li>⏳ profiles.js</li>
+  </ul>
+
+  <h4>⏳ misc/ (0/4)</h4>
+  <ul>
+    <li>⏳ dice.js</li>
+    <li>⏳ youtube.js</li>
+    <li>⏳ invisible.js</li>
+    <li>⏳ islamic-library.js</li>
+  </ul>
+
+  <h4>⏳ debug/ (0/1)</h4>
+  <ul><li>⏳ debug.js</li></ul>
+</div>
+
+<!-- ═══ 3. الروابط ═══ -->
+<div class="section" id="s3">
+  <h2>🔗 3. الروابط المستخدمة</h2>
+
+  <table>
+    <thead><tr><th>البند</th><th>الرابط / القيمة</th></tr></thead>
+    <tbody>
+      <tr><td>المستودع</td><td><span class="inline-code">github.com/emaanalsead-png/qamaralsham-v2</span></td></tr>
+      <tr><td>الصفحة المنشورة</td><td><span class="inline-code">emaanalsead-png.github.io/qamaralsham-v2/</span></td></tr>
+      <tr><td>Firebase Project</td><td><span class="inline-code">qamaralshamtest</span></td></tr>
+      <tr><td>Firebase Console</td><td><span class="inline-code">console.firebase.google.com/project/qamaralshamtest</span></td></tr>
+      <tr><td>حساب GitHub</td><td><span class="inline-code">emaanalsead-png</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Firebase Config (في core/config.js):</h3>
+  <ul>
+    <li>apiKey: <span class="inline-code">AIzaSyCWh4rv__7DKqXUHXaPbNv4xGqJdoMbsCg</span></li>
+    <li>authDomain: <span class="inline-code">qamaralshamtest.firebaseapp.com</span></li>
+    <li>databaseURL: <span class="inline-code">https://qamaralshamtest-default-rtdb.europe-west1.firebasedatabase.app</span></li>
+    <li>projectId: <span class="inline-code">qamaralshamtest</span></li>
+  </ul>
+
+  <h3>index.html الحالي:</h3>
+  <div class="alert alert-info">
+    <strong>محمل ذكي</strong> يفحص كل الـ61 ملف تلقائياً<br>
+    • كل ما ترفع ملف جديد → يُكتشف تلقائياً<br>
+    • لا حاجة لتعديل index.html بعد الآن<br>
+    • يعرض لوحة تحقق كاملة
+  </div>
+</div>
+
+<!-- ═══ 4. الملفات المكتملة ═══ -->
+<div class="section" id="s4">
+  <h2>✅ 4. الملفات المكتملة — التفاصيل</h2>
+
+  <h3>📦 core/ (المرحلة 1)</h3>
+  <table>
+    <thead><tr><th>الملف</th><th>الحجم</th><th>الوظيفة الرئيسية</th></tr></thead>
+    <tbody>
+      <tr><td>config.js</td><td>~100</td><td>Firebase init + waitForFirebase()</td></tr>
+      <tr><td>constants.js</td><td>~350</td><td>RANK_LEVELS, ROOMS, STORAGE_KEYS, PATHS</td></tr>
+      <tr><td>utils.js</td><td>~400</td><td>escapeHtml, formatTime, showToast, ...</td></tr>
+      <tr><td>state.js</td><td>~150</td><td>EventBus + AppState</td></tr>
+      <tr><td>boot.js</td><td>~150</td><td>startup orchestration</td></tr>
+    </tbody>
+  </table>
+
+  <h3>🔥 firebase/ (المرحلة 2أ)</h3>
+  <table>
+    <thead><tr><th>الملف</th><th>الحجم</th><th>الوظيفة الرئيسية</th></tr></thead>
+    <tbody>
+      <tr><td>firebase.js</td><td>~420</td><td>QamarFB: get/set/update/push/remove/onValue + Paths</td></tr>
+      <tr><td>optimizers.js</td><td>~380</td><td>IndexedDB Cache + Batch + Debounce + Offline Queue</td></tr>
+      <tr><td>resilience.js</td><td>~400</td><td>Retry (3-5) + Circuit Breaker + Heartbeat</td></tr>
+      <tr><td>cleaners.js</td><td>~450</td><td>8 مهام: stories, voice, audit, notifications, locks</td></tr>
+    </tbody>
+  </table>
+
+  <h3>👤 auth/ (المرحلة 2ب)</h3>
+  <table>
+    <thead><tr><th>الملف</th><th>الحجم</th><th>الوظيفة</th></tr></thead>
+    <tbody>
+      <tr><td>auth.js</td><td>~520</td><td>Anonymous + Email/Password + linkWithCredential (زائر→عضو)</td></tr>
+      <tr><td>session.js</td><td>~400</td><td>جلسة 24 ساعة + localStorage + تمديد تلقائي</td></tr>
+      <tr><td>identity.js</td><td>~500</td><td>23 حقل (name/bio/avatar/frame/colors/cinema...)</td></tr>
+      <tr><td>ranks.js</td><td>~520</td><td>رتب + 40 صلاحية + تعيين الملوك 95 (Queen 1-4)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>🛡️ security/ (المرحلة 3)</h3>
+  <table>
+    <thead><tr><th>الملف</th><th>الحجم</th><th>الوظيفة</th></tr></thead>
+    <tbody>
+      <tr><td>device-guard.js</td><td>~550</td><td>بصمة (Canvas+Audio+Hardware) — بدون بطارية/اسم</td></tr>
+      <tr><td>audit.js</td><td>~600</td><td>سجل ~35 نوع + Rate 20/د + List with filters</td></tr>
+      <tr><td>bans.js</td><td>~600</td><td>حظر مؤقت/دائم + طرد فوري + حظر جهاز تلقائي</td></tr>
+      <tr><td>reports.js</td><td>~600</td><td>تقارير (80+) + حل/أرشفة/حذف + dedup 24h</td></tr>
+      <tr><td>suspects.js</td><td>~500</td><td>مشبوهون (King) + hooks لـ voice-monitor</td></tr>
+    </tbody>
+  </table>
+
+  <h3>💬 chat/ (المرحلة 4)</h3>
+  <table>
+    <thead><tr><th>الملف</th><th>الحجم</th><th>الوظيفة</th></tr></thead>
+    <tbody>
+      <tr><td>chat.js</td><td>~600</td><td>send/receive + همس + soft delete + touch lastSeen</td></tr>
+      <tr><td>chat-input.js</td><td>~700</td><td>input + reply + draft + mentions + rate counter</td></tr>
+      <tr><td>chat-ui.js</td><td>~800</td><td>render + long-press + action menu + reactions + lazy load 12</td></tr>
+      <tr><td>chat-effects.js</td><td>~700</td><td>42 نمط + 8 cinema text + 5 cinema bg</td></tr>
+    </tbody>
+  </table>
+
+  <h3>🚪 rooms/ (المرحلة 4)</h3>
+  <table>
+    <thead><tr><th>الملف</th><th>الحجم</th><th>الوظيفة</th></tr></thead>
+    <tbody>
+      <tr><td>rooms.js</td><td>~650</td><td>قائمة + تنقل + King يضيف/يحذف/يكتم غرف</td></tr>
+      <tr><td>room-settings.js</td><td>~620</td><td>اسم/أيقونة/خلفية/ترحيب — debounced 800ms</td></tr>
+      <tr><td>room-voice.js</td><td>~900</td><td>مايكات (slots) + heartbeat 20s + UI bar</td></tr>
+    </tbody>
+  </table>
+
+  <h3>💌 pm/ (المرحلة 5)</h3>
+  <table>
+    <thead><tr><th>الملف</th><th>الحجم</th><th>الوظيفة</th></tr></thead>
+    <tbody>
+      <tr><td>pm.js</td><td>~750</td><td>WhatsApp-style (✓✓ + جاري الكتابة) + rate 1s</td></tr>
+      <tr><td>pm-archiver.js</td><td>~600</td><td>أرشفة عند 200 + كل 6h + retention سنة</td></tr>
+      <tr><td>pm-monitor.js</td><td>~800</td><td>King يقرأ/يسترجع/يحذف PM الكل</td></tr>
+      <tr><td>pm-voice.js</td><td>~550</td><td>صوتيات PM (3min/5MB) — تُسمع مرة → تُحذف</td></tr>
+    </tbody>
+  </table>
+
+  <h3>🎙️ voice/ (المرحلة 5)</h3>
+  <table>
+    <thead><tr><th>الملف</th><th>الحجم</th><th>الوظيفة</th></tr></thead>
+    <tbody>
+      <tr><td>voice-system.js</td><td>~700</td><td>WebRTC Mesh (4) + ICE + Speaking (15/200ms)</td></tr>
+      <tr><td>voice-studio.js</td><td>~900</td><td>تسجيل 80+ (5min) + 6 مؤثرات + 13 tooltip</td></tr>
+      <tr><td>voice-monitor.js</td><td>~750</td><td>مراقبة مشبوهين + Telegram (5min segments)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══ 5. القرارات الجديدة ═══ -->
+<div class="section" id="s5">
+  <h2>🆕 5. القرارات الجديدة أثناء البناء</h2>
+
+  <h3>👑 الرتب الملكية:</h3>
+  <div class="alert alert-purple">
+    <strong>المفهوم النهائي:</strong>
+    <ul>
+      <li>👑 <strong>الملك الحقيقي</strong> (King, rankLevel 100)</li>
+      <li>👸 <strong>4 أشخاص برتبة 95</strong> — Queen/Queen2/Queen3/Queen4 (queenOrder: 1-4)</li>
+      <li><strong>التسمية البصرية موحدة تماماً</strong> — لا فرق بينهم</li>
+      <li><strong>لا يمكن لأحد التمييز</strong> بينهم إطلاقاً</li>
+      <li><strong>صلاحيات أساس 90</strong> (Master Owner)</li>
+      <li><strong>صلاحيات مخصصة:</strong> الملك يمنح لكل واحد يدوياً (~40 صلاحية)</li>
+      <li><strong>الملك فقط يعرف</strong> مين مين</li>
+      <li><strong>غرفة الملك مخفية</strong> عن الجميع (الملك فقط)</li>
+    </ul>
+  </div>
+
+  <h3>🤫 نظام الهمس (Whisper):</h3>
+  <div class="alert alert-info">
+    <strong>جديد — لم يكن في v1:</strong>
+    <ul>
+      <li>منشن خاص: <span class="inline-code">@اسم مرحبا</span></li>
+      <li>المرسل + المُشار إليه + الملك يرون النص</li>
+      <li>الباقي يرون: "فلان همس لـ علان"</li>
+      <li>لا @ في العرض — الاسم فقط</li>
+      <li>لا تفاعل على الهمس (لأنه خاص)</li>
+    </ul>
+  </div>
+
+  <h3>📱 PM — WhatsApp-style:</h3>
+  <div class="alert alert-success">
+    <strong>جديد:</strong>
+    <ul>
+      <li>✓ أُرسلت (رمادي)</li>
+      <li>✓✓ وصلت (رمادي)</li>
+      <li>✓✓ قُرئت (ذهبي)</li>
+      <li>"جاري الكتابة..." (يُمسح تلقائي 4s)</li>
+      <li>Rate: 1 ثانية (بدل 3)</li>
+    </ul>
+  </div>
+
+  <h3>🎛️ الاستوديو — Voice Studio:</h3>
+  <div class="alert alert-purple">
+    <strong>جديد:</strong>
+    <ul>
+      <li>أزرار كبيرة على خلفية الشات (ليس modal كامل)</li>
+      <li>"موسيقار الشام" = 13 Tooltip ذكي (لا رسائل تلقائية)</li>
+      <li>كل Tooltip يظهر مرة واحدة → زر "حسناً"</li>
+      <li>يُعاد فقط عند مغادرة/عودة الاستوديو</li>
+      <li>6 مؤثرات: Bass, Mid, Treble, Echo, Reverb, Volume</li>
+    </ul>
+  </div>
+
+  <h3>👁️ مراقبة الصوت:</h3>
+  <div class="alert alert-warning">
+    <strong>قرار معماري:</strong>
+    <ul>
+      <li>المراقبة تعمل في <strong>أي تبويب مفتوح</strong> (مع قفل موزّع)</li>
+      <li>تسجيل مقسم 5 دقائق/جزء → رفع Telegram مباشرة</li>
+      <li>الملك فقط (rankLevel 100)</li>
+      <li>لا تسجيل بدون متصفح مفتوح (محدودة مجانياً)</li>
+    </ul>
+  </div>
+
+  <h3>🎨 chat-effects — 42 نمط:</h3>
+  <ul>
+    <li>12 لون/تدرج ثابت</li>
+    <li>6 تدرجات متحركة</li>
+    <li>7 توهج (neon, flicker, candle...)</li>
+    <li>6 تحويلات (breathe, skew, spin...)</li>
+    <li>11 مشهد (spiral, nebula, fireworks...)</li>
+    <li>+ 8 cinema text + 5 cinema bg</li>
+  </ul>
+</div>
+
+<!-- ═══ 6. الملفات المتبقية ═══ -->
+<div class="section" id="s6">
+  <h2>⏳ 6. الملفات المتبقية (29 ملف)</h2>
+
+  <h3>🤖 bots/ (4 ملفات) — التالي</h3>
+  <ul>
+    <li><strong>bots.js</strong> — إدارة 5 بوتات: السجان، قمر الشام، الشاطر، حكواتي الشام، السفير</li>
+    <li><strong>bot-commands.js</strong> — الأوامر (نقاط، إحصائيات، إلخ)</li>
+    <li><strong>bot-training.js</strong> — تدريب البوتات (King فقط)</li>
+    <li><strong>guardian-inbox.js</strong> — صندوق وارد السجان</li>
+  </ul>
+
+  <h3>👑 king/ (3 ملفات)</h3>
+  <ul>
+    <li><strong>king-room.js</strong> — غرفة الملك (14 تبويب)</li>
+    <li><strong>king-actions.js</strong> — 15 أمر ملكي</li>
+    <li><strong>king-queens.js</strong> — إدارة الصلاحيات المخصصة للملوك 95</li>
+  </ul>
+
+  <h3>📸 stories/ (2 ملفات)</h3>
+  <ul>
+    <li><strong>stories.js</strong> — الحالات (24 ساعة)</li>
+    <li><strong>stories-cleaner.js</strong> — التنظيف التلقائي</li>
+  </ul>
+
+  <h3>📁 media/ (4 ملفات)</h3>
+  <ul>
+    <li><strong>uploader.js</strong> — الرفع على Telegram/imgbb</li>
+    <li><strong>media-picker.js</strong> — قائمة الوسائط</li>
+    <li><strong>paint.js</strong> — الرسام</li>
+    <li><strong>styled-messages.js</strong> — نص مميز</li>
+  </ul>
+
+  <h3>🎨 effects/ (2 ملفات)</h3>
+  <ul>
+    <li><strong>name-effects.js</strong> — واجهة للتأثيرات (يتكامل مع chat-effects)</li>
+    <li><strong>frames-engine.js</strong> — الإطارات (jsDelivr)</li>
+  </ul>
+
+  <h3>🔔 notifications/ (2 ملفات)</h3>
+  <ul>
+    <li><strong>notifications.js</strong> — إشعارات المستخدم</li>
+    <li><strong>room-alerts.js</strong> — تنبيهات الغرفة</li>
+  </ul>
+
+  <h3>🎨 ui/ (4 ملفات)</h3>
+  <ul>
+    <li><strong>ui-core.js</strong> — النواة</li>
+    <li><strong>ui-nav</strong>.js — التنقل السفلي</li>
+    <li><strong>ui-input.js</strong> — الإدخال</li>
+    <li><strong>ui-mobile.js</strong> — الجوال</li>
+  </ul>
+
+  <h3>👤 guest/ (1 ملف)</h3>
+  <ul>
+    <li><strong>guest.js</strong> — إدارة الزوار</li>
+  </ul>
+
+  <h3>👥 social/ (2 ملفات)</h3>
+  <ul>
+    <li><strong>social.js</strong> — الأصدقاء + الإعجابات</li>
+    <li><strong>profiles.js</strong> — البروفايل الكامل + زر أوامر King</li>
+  </ul>
+
+  <h3>🎲 misc/ (4 ملفات)</h3>
+  <ul>
+    <li><strong>dice.js</strong> — النرد</li>
+    <li><strong>youtube.js</strong> — يوتيوب</li>
+    <li><strong>invisible.js</strong> — وضع الشبح (King/Queen)</li>
+    <li><strong>islamic-library.js</strong> — المكتبة الإسلامية</li>
+  </ul>
+
+  <h3>🐛 debug/ (1 ملف)</h3>
+  <ul>
+    <li><strong>debug.js</strong> — زر التشخيص (King فقط)</li>
+  </ul>
+</div>
+
+<!-- ═══ 7. المهام المؤجلة ═══ -->
+<div class="section" id="s7">
+  <h2>📌 7. المهام المؤجلة</h2>
+
+  <h3>⚠️ مهمة حرجة — Firebase Rules:</h3>
+  <div class="alert alert-danger">
+    <strong>لا نعدّل Firebase Rules الآن!</strong>
+    <ul>
+      <li>v1 يعمل رسمياً على نفس المشروع</li>
+      <li>أي تعديل قد يكسر v1</li>
+      <li>الانتظار حتى اكتمال v2 بالكامل</li>
+      <li>ثم إضافة قواعد جديدة <strong>فقط</strong> (config/telegram)</li>
+    </ul>
+  </div>
+
+  <h3>⏳ مهام مؤجلة:</h3>
+  <ol>
+    <li><strong>Firebase Rules update</strong> — بعد اكتمال v2</li>
+    <li><strong>config/telegram</strong> — إعدادات رفع Telegram (botToken + chatId)</li>
+    <li><strong>index.html الحقيقي</strong> — بدل لوحة الاختبار</li>
+    <li><strong>CSS الكامل</strong> — كل classes (chat.css, profile.css, king.css, mobile.css...)</li>
+    <li><strong>styles/ (8 ملفات)</strong> — لم نبنِها بعد</li>
+    <li><strong>PWA + Service Worker</strong> — sw.js + manifest.json</li>
+    <li><strong>sitemap.xml</strong></li>
+    <li><strong>اختبار جهازين</strong> — للصوت + PM</li>
+    <li><strong>صور الأقمار الذهبية</strong> — SVG مدمج لكل الزوار</li>
+  </ol>
+
+  <h3>💡 مهام صغيرة قيد المتابعة:</h3>
+  <ul>
+    <li>حفظ UID الزائر في localStorage (لمنع تغيّره عند reload)</li>
+    <li>تحديث styles/chat.css بعد رؤية الواجهة الفعلية</li>
+    <li>صورة قمر ذهبي موحدة للملف الشخصي</li>
+    <li>صور الأقمار SVG لكل الرتب الافتراضية</li>
+  </ul>
+</div>
+
+<!-- ═══ 8. Firebase ═══ -->
+<div class="section" id="s8">
+  <h2>🔥 8. Firebase Paths + Rules</h2>
+
+  <h3>8.1 المسارات المستخدمة حالياً:</h3>
+  <div style="background:rgba(0,0,0,.5);border:1px solid rgba(168,85,247,.3);border-radius:8px;padding:12px;font-family:'Courier New',monospace;font-size:11px;color:#c084fc;direction:ltr;text-align:left;line-height:1.5;overflow-x:auto;">
+users/$uid/
+  name, code, age, gender, email
+  rank, rankLevel, queenOrder, customPermissions
+  avatar, cover, coverType, bio, country, family
+  nameColor, nameGradient, nameBgColor, nameBgGradient
+  cinemaTextStyle, cinemaBgStyle
+  avatarFrame, profileGlow, profileBgType, profileBgValue
+  musicURL, poetry, poetryBg, poetryAttachment
+  privacy, invisible, currentRoom
+  isBanned, bannedUntil, permanentBan, banReason
+  isJailed, jailUntil, jailCount, jailReason
+  lastRoomBeforeJail, warnings, kickCount
+  friends, friend_requests, likes, visitors, blocked
+  devices, ipHashes, mutes/{global, $roomId}
+
+user_codes/$code  → uid
+user_names/$name  → uid
+user_presence/$uid/  → { state, room, lastChanged, forced }
+
+room_messages/$roomId/$msgId/
+  senderUid, senderName, senderCode, senderAvatar
+  senderColor, senderRank, senderRankLevel, senderFrame
+  senderNameColor, senderNameGradient
+  senderNameBgColor, senderNameBgGradient
+  senderCinemaText, senderCinemaBg
+  text, mentions, replyTo, time
+  edited, deleted, reactions
+  hidden, hiddenBy, hiddenAt, hiddenReason
+  attachment, originalText, originalAttachment
+
+user_private_messages/$uid/$otherUid/$msgId/
+  fromUid, toUid, text, time, read, delivered
+  deleted, replyTo, attachment, reactions
+  originalText, originalAttachment
+
+user_private_chats/$uid/$otherUid/
+  otherUid, otherName, otherAvatar
+  lastMessage, lastTime, lastFromMe, unread, deletedAt
+
+user_private_typing/$uid/$otherUid/  → timestamp
+
+user_private_blocks/$uid/$otherUid/
+
+private_archive/$uid/$otherUid/$msgId/
+pm_archive_index/$uid/$otherUid/
+  count, totalArchived, lastArchive, keepRecent
+
+room_settings/$roomId/
+  name, icon, iconImage
+  bgType, bgValue, bgImage
+  nameColor, fontColor, fontSize
+  welcome/{text, enabled}
+  maxUsers, micCount, type, visibleTo
+
+custom_rooms/$roomId/
+  id, name, icon, type, visibleTo
+  micCount, maxUsers, allowMic
+  createdBy, createdByName, createdAt, custom
+
+room_members/$roomId/$uid/  → { at, forced, by, reason }
+room_kicks/$roomId/$uid/  → { at, by, byName, reason }
+room_mutes/$roomId/  → { at, by, byName, reason }
+
+room_voice/$roomId/
+  participants/$uid/ → { at, name }
+  speakers/$slot/
+    uid, name, avatar, code, rank, rankLevel
+    muted, mutedBy, speaking, mode, music, joinedAt
+  signals/$toUid/$rid/
+    fromUid, type (offer/answer/ice), payload, at
+
+pm_voice_msgs/$uid/$rid/
+  audio, duration, size, mime, createdAt
+  played, playedAt, deleted, deletedAt
+  fromUid, toUid, fromName, fromAvatar, side
+
+studio_sessions/$uid/
+studio_recordings/$uid/$rid/
+  duration, size, mime, effects, createdAt, url
+studio_tips_seen/$uid/$buttonId/
+
+voice_monitor_lock/$roomId/
+  instanceId, at, byUid, byName
+
+king_suspects/$uid/
+  name, avatar, code, addedAt, addedBy, addedByName
+
+king_alerts/$rid/
+  type, suspects, targetUid, targetName
+  byUid, byName, room, duration, size
+  tgMessageId, segmentIndex, createdAt
+
+audit_log/general/$pushKey/
+  type, label, byUid, byName, at
+  targetUid, targetName, roomId, reason
+  details, msgId, deviceId, duration, amount
+
+reports/$rid/
+  reporterUid, reporterName, reporterAvatar, reporterCode
+  targetUid, targetName, targetAvatar, targetCode
+  reason, reasonKey, messageText, messageKey
+  roomId, isPrivate, time, status
+  resolvedAt, resolvedBy, resolvedByName, actionTaken, resolutionNote
+reports_archive/$rid/
+
+device_registry/$deviceId/$uid/  → { name, at, uuid }
+device_ip_map/$ipHash/uids/$uid/
+ip_registry/$ipHash/$uid/  → { name, at, ip }
+banned_devices/$deviceId/  → { uid, name, reason, by, byName, at, auto }
+banned_ips/$ipHash/
+multi_account_alerts/$key/  → { uid, name, deviceId, ip, ipHash, at, status, type }
+bot_data/device_seen/$key/  → timestamp
+
+guardian_inbox/$kingUid/$pushKey/
+  from, fromName, type, reportId
+  targetUid, targetName, reason, at, read
+
+config/king_uid  → uid
+config/telegram/  → { botToken, chatId, enabled }
+
+user_notifications/$uid/$pushKey/
+  type, at, read, [بيانات إضافية حسب النوع]
+
+system/
+  stories_cleaner_lock
+  pm_archiver_lock
+  bot_msgs_cleaner_lock
+  voice_monitor_lock
+  </div>
+
+  <h3>8.2 Firebase Rules الحالية (من v1):</h3>
+  <div class="alert alert-warning">
+    <strong>لا نعدّلها</strong> — v1 يعمل عليها.<br>
+    مأخوذة من رسالة المستخدم الأولى (القواعد الكاملة).<br>
+    سنضيف فقط <span class="inline-code">config/telegram</span> لاحقاً.
+  </div>
+</div>
+
+<!-- ═══ 9. القياسات ═══ -->
+<div class="section" id="s9">
+  <h2>📏 9. القياسات المرجعية</h2>
+
+  <h3>Header</h3>
+  <table>
+    <tbody>
+      <tr><td>height</td><td>42px</td></tr>
+      <tr><td>header-btn</td><td>30×30px</td></tr>
+      <tr><td>room-title font</td><td>13px</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Chat</h3>
+  <table>
+    <tbody>
+      <tr><td>input font-size</td><td>13px</td></tr>
+      <tr><td>input radius</td><td>20px</td></tr>
+      <tr><td>send-btn</td><td>34×34px</td></tr>
+      <tr><td>emoji/plus-btn</td><td>30×30px</td></tr>
+      <tr><td>mic-btn</td><td>34×34px</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Voice</h3>
+  <table>
+    <tbody>
+      <tr><td>SPEAKING_THRESHOLD</td><td>15</td></tr>
+      <tr><td>SPEAKING_CHECK_MS</td><td>200ms</td></tr>
+      <tr><td>HEARTBEAT_MS</td><td>20000ms</td></tr>
+      <tr><td>MAX_DURATION (studio)</td><td>5 دقائق</td></tr>
+      <tr><td>MAX_SIZE (voice msg)</td><td>5 MB</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Rate Limits</h3>
+  <table>
+    <tbody>
+      <tr><td>MESSAGE_INTERVAL_MS (chat)</td><td>5000ms</td></tr>
+      <tr><td>PRIVATE_MESSAGE_INTERVAL_MS</td><td>1000ms (محدّث)</td></tr>
+      <tr><td>PM_VOICE</td><td>5/دقيقة</td></tr>
+      <tr><td>AUDIT</td><td>20/دقيقة</td></tr>
+      <tr><td>REPORTS</td><td>5/دقيقة</td></tr>
+      <tr><td>MAX_MESSAGE_LENGTH</td><td>2000 حرف</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Timeouts</h3>
+  <table>
+    <tbody>
+      <tr><td>Firebase init</td><td>10s</td></tr>
+      <tr><td>Auth wait</td><td>8s</td></tr>
+      <tr><td>imgbb upload</td><td>30s</td></tr>
+      <tr><td>Telegram upload</td><td>60s</td></tr>
+      <tr><td>Batch window</td><td>300ms</td></tr>
+      <tr><td>Debounce (settings)</td><td>800ms</td></tr>
+      <tr><td>Typing timeout</td><td>4s</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══ 10. المحادثة الجديدة ═══ -->
+<div class="section" id="s10">
+  <h2>📝 10. خطوات المحادثة الجديدة</h2>
+
+  <div class="alert alert-success">
+    <strong>🎯 ابدأ محادثة جديدة بهذا التسلسل:</strong>
+    <ol>
+      <li>افتح محادثة جديدة في الذكاء الاصطناعي</li>
+      <li>الصق هذه الوثيقة كاملة</li>
+      <li>اكتب السطر التالي:</li>
+    </ol>
+  </div>
+
+  <div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.4);border-radius:10px;padding:16px;margin:12px 0;font-family:monospace;font-size:13px;direction:rtl;text-align:right;color:#bbf7d0;">
+    نكمل من حيث وقفنا — 32 ملف مكتمل.<br>
+    التالي: bots/bots.js<br>
+    اشرح الفكرة قبل الكود ثم ابني.
+  </div>
+
+  <h3>📌 ما يجب أن يعرفه المساعد الجديد:</h3>
+  <ul>
+    <li>✅ 8 مجلدات كاملة (core, firebase, auth, security, chat, rooms, pm, voice)</li>
+    <li>✅ index.html يحتوي محمّلاً ذكياً يفحص 61 ملفاً</li>
+    <li>✅ لا تُعدّل Firebase Rules الآن</li>
+    <li>✅ الملفات الكاملة فقط (لا patches)</li>
+    <li>✅ اشرح قبل البناء ثم انتظر التأكيد</li>
+    <li>✅ الروابط محدثة في القسم 3</li>
+  </ul>
+
+  <h3>🎯 خطة المرحلة القادمة (بالترتيب):</h3>
+  <ol>
+    <li><strong>bots/</strong> (4 ملفات) — البوتات الخمسة</li>
+    <li><strong>king/</strong> (3 ملفات) — غرفة الملك + 15 أمر + إدارة الملوك 95</li>
+    <li><strong>stories/</strong> (2 ملفات) — الحالات</li>
+    <li><strong>media/</strong> (4 ملفات) — الرفع + الوسائط</li>
+    <li><strong>effects/</strong> (2 ملفات) — التأثيرات + الإطارات</li>
+    <li><strong>notifications/</strong> (2 ملفات)</li>
+    <li><strong>ui/</strong> (4 ملفات) — واجهات التنقل</li>
+    <li><strong>guest/</strong> (1 ملف)</li>
+    <li><strong>social/</strong> (2 ملفات) — الأصدقاء + البروفايل</li>
+    <li><strong>misc/</strong> (4 ملفات) — نرد/يوتيوب/شبح/إسلاميات</li>
+    <li><strong>debug/</strong> (1 ملف) — زر التشخيص</li>
+  </ol>
+
+  <h3>📊 بعد كل مرحلة:</h3>
+  <ul>
+    <li>رفع الملف في GitHub</li>
+    <li>فتح الرابط</li>
+    <li>فحص اللوحة</li>
+    <li>✅ إذا كل شيء تمام → التالي</li>
+    <li>⚠️ إذا خطأ → تشخيصه مع المستخدم</li>
+  </ul>
+
+  <div class="alert alert-warning">
+    <strong>⚠️ تنبيهات مهمة:</strong>
+    <ul>
+      <li>النقاش قبل الكود — دائماً</li>
+      <li>الملفات كاملة — بدون patches</li>
+      <li>لا تعديل Firebase Rules حتى نهاية المشروع</li>
+      <li>v1 شغال — لا تكسره</li>
+      <li>0$ — لا خدمات مدفوعة</li>
+      <li>يعمل في سوريا — لا Cloudflare/Agora</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══ Footer ═══ -->
+<div class="footer">
+  <p>🌙 قمر الشام v2 — الوثيقة الكاملة المحدّثة</p>
+  <p>32/61 ملف مكتمل — 52% — اخر تحديث: اليوم</p>
+  <p>احفظ هذا الملف على جهازك واستخدمه في المحادثة الجديدة</p>
+</div>
+
+</div>
+
+</body>
+</html>
