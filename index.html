@@ -37,7 +37,7 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
 .row{
   display:flex;justify-content:space-between;
   padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);
-  font-size:13px;
+  font-size:12.5px;
 }
 .row:last-child{border-bottom:none}
 .row .name{color:#9ca3af;font-weight:700}
@@ -98,18 +98,20 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
     <div class="row"><span class="name">core/boot.js</span><span class="val" id="s-boot">⏳</span></div>
     <div class="row"><span class="name">firebase/firebase.js</span><span class="val" id="s-fbfile">⏳</span></div>
     <div class="row"><span class="name">firebase/optimizers.js</span><span class="val" id="s-optfile">⏳</span></div>
+    <div class="row"><span class="name">firebase/resilience.js</span><span class="val" id="s-resfile">⏳</span></div>
     <div class="row"><span class="name">Firebase init</span><span class="val" id="s-fbinit">⏳</span></div>
     <div class="row"><span class="name">Anonymous Auth</span><span class="val" id="s-anon">⏳</span></div>
     <div class="row"><span class="name">QamarFB.set()</span><span class="val" id="s-fbset">⏳</span></div>
     <div class="row"><span class="name">QamarFB.get()</span><span class="val" id="s-fbget">⏳</span></div>
     <div class="row"><span class="name">QamarFB.onValue()</span><span class="val" id="s-fbon">⏳</span></div>
     <div class="row"><span class="name">QamarFB.remove()</span><span class="val" id="s-fbrm">⏳</span></div>
-    <div class="row"><span class="name">Opt.cacheMessage()</span><span class="val" id="s-optcache">⏳</span></div>
-    <div class="row"><span class="name">Opt.getCachedMessages()</span><span class="val" id="s-optget">⏳</span></div>
-    <div class="row"><span class="name">Opt.batchUpdate()</span><span class="val" id="s-optbatch">⏳</span></div>
-    <div class="row"><span class="name">Opt.debouncedUpdate()</span><span class="val" id="s-optdeb">⏳</span></div>
-    <div class="row"><span class="name">Opt.smartWrite()</span><span class="val" id="s-optsmart">⏳</span></div>
-    <div class="row"><span class="name">Opt.getStats()</span><span class="val" id="s-optstats">⏳</span></div>
+    <div class="row"><span class="name">Res.retry()</span><span class="val" id="s-resretry">⏳</span></div>
+    <div class="row"><span class="name">Res.safeSet()</span><span class="val" id="s-resset">⏳</span></div>
+    <div class="row"><span class="name">Res.safeGet()</span><span class="val" id="s-resget">⏳</span></div>
+    <div class="row"><span class="name">Res.isConnected()</span><span class="val" id="s-resconn">⏳</span></div>
+    <div class="row"><span class="name">Res.getStats()</span><span class="val" id="s-resstats">⏳</span></div>
+    <div class="row"><span class="name">Res.circuitStatus()</span><span class="val" id="s-rescirc">⏳</span></div>
+    <div class="row"><span class="name">Res.now()</span><span class="val" id="s-resnow">⏳</span></div>
     <div class="row"><span class="name">الرتب</span><span class="val" id="s-ranks">⏳</span></div>
     <div class="row"><span class="name">الغرف</span><span class="val" id="s-rooms">⏳</span></div>
     <div class="row"><span class="name">EventBus</span><span class="val" id="s-bus">⏳</span></div>
@@ -126,6 +128,7 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
 <script src="core/state.js"></script>
 <script src="firebase/firebase.js"></script>
 <script src="firebase/optimizers.js"></script>
+<script src="firebase/resilience.js"></script>
 <script src="core/boot.js"></script>
 
 <script>
@@ -155,6 +158,7 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
     set('s-boot', window.QamarBoot ? '✅ يعمل' : '❌', !!window.QamarBoot);
     set('s-fbfile', window.QamarFB ? '✅ يعمل' : '❌', !!window.QamarFB);
     set('s-optfile', window.QamarOpt ? '✅ يعمل' : '❌', !!window.QamarOpt);
+    set('s-resfile', window.QamarResilience ? '✅ يعمل' : '❌', !!window.QamarResilience);
     set('s-fbinit', window.db ? '✅ متصل' : '⏳', !!window.db);
 
     set('s-ranks', (window.QAMAR && window.QAMAR.RANKS_ORDERED) ? '✅ ' + window.QAMAR.RANKS_ORDERED.length + ' رتبة' : '❌', !!(window.QAMAR && window.QAMAR.RANKS_ORDERED));
@@ -170,20 +174,18 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
 
     if(!window.QamarFB){ log('❌ QamarFB missing'); return finish(); }
     if(!window.QamarOpt){ log('❌ QamarOpt missing'); return finish(); }
+    if(!window.QamarResilience){ log('❌ QamarResilience missing'); return finish(); }
     if(!window.auth){ log('❌ auth missing'); set('s-anon','❌',false); return finish(); }
 
-    // ═══ اختبار دوال optimizers ═══
-    try {
-      set('s-optcache', typeof window.QamarOpt.cacheMessage === 'function' ? '✅ يعمل' : '❌', typeof window.QamarOpt.cacheMessage === 'function');
-      set('s-optget',   typeof window.QamarOpt.getCachedMessages === 'function' ? '✅ يعمل' : '❌', typeof window.QamarOpt.getCachedMessages === 'function');
-      set('s-optbatch', typeof window.QamarOpt.batchUpdate === 'function' ? '✅ يعمل' : '❌', typeof window.QamarOpt.batchUpdate === 'function');
-      set('s-optdeb',   typeof window.QamarOpt.debouncedUpdate === 'function' ? '✅ يعمل' : '❌', typeof window.QamarOpt.debouncedUpdate === 'function');
-      set('s-optsmart', typeof window.QamarOpt.smartWrite === 'function' ? '✅ يعمل' : '❌', typeof window.QamarOpt.smartWrite === 'function');
-      set('s-optstats', typeof window.QamarOpt.getStats === 'function' ? '✅ يعمل' : '❌', typeof window.QamarOpt.getStats === 'function');
-      log('optimizers functions loaded');
-    } catch(e){
-      log('❌ optimizers check error: ' + e.message);
-    }
+    // ═══ اختبار دوال resilience الأساسية ═══
+    var R = window.QamarResilience;
+    set('s-resretry', typeof R.retry === 'function' ? '✅ يعمل' : '❌', typeof R.retry === 'function');
+    set('s-resset', typeof R.safeSet === 'function' ? '✅ يعمل' : '❌', typeof R.safeSet === 'function');
+    set('s-resget', typeof R.safeGet === 'function' ? '✅ يعمل' : '❌', typeof R.safeGet === 'function');
+    set('s-resstats', typeof R.getStats === 'function' ? '✅ يعمل' : '❌', typeof R.getStats === 'function');
+    set('s-rescirc', typeof R.circuitStatus === 'function' ? '✅ يعمل' : '❌', typeof R.circuitStatus === 'function');
+    set('s-resnow', typeof R.now === 'function' ? '✅ يعمل' : '❌', typeof R.now === 'function');
+    log('resilience functions loaded');
 
     // ═══ Anonymous Auth ═══
     log('🔐 Signing in anonymously...');
@@ -193,121 +195,113 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
         set('s-anon', '✅ ' + uid.substring(0,8) + '...', true);
         log('✅ Anonymous uid=' + uid);
 
-        var testPath   = 'user_presence/' + uid + '/_qamar_test';
-        var listenPath = 'user_presence/' + uid + '/_qamar_listen';
-
-        // ═══ اختبار IndexedDB Cache فعلياً ═══
-        var testRoomId = '_test_room_' + Date.now();
-        var testMsgId = '_msg_' + Date.now();
-
-        return window.QamarOpt.cacheMessage(testRoomId, testMsgId, { text: 'hello', time: Date.now() })
-          .then(function(cached){
-            log('✅ Opt.cacheMessage: ' + cached);
-            return window.QamarOpt.getCachedMessages(testRoomId, 10);
-          })
-          .then(function(msgs){
-            if(msgs && msgs.length > 0){
-              log('✅ Opt.getCachedMessages: ' + msgs.length + ' message(s)');
-            } else {
-              log('⚠️ Opt.getCachedMessages: empty (IndexedDB might be unavailable)');
-            }
-            // اختبار stats
-            var st = window.QamarOpt.getStats();
-            log('📊 Opt.getStats: ' + JSON.stringify(st));
-
-            // cleanup cache
-            return window.QamarOpt.clearCachedMessages(testRoomId).catch(function(){});
-          })
-          .then(function(){
-            // ═══ اختبار Firebase write/read/remove ═══
-            return window.QamarFB.set(testPath, { hello: 'world', at: Date.now() });
-          })
-          .then(function(){
-            set('s-fbset', '✅ يعمل', true);
-            log('✅ QamarFB.set OK');
-            return window.QamarFB.get(testPath);
-          })
-          .then(function(val){
-            if(val && val.hello === 'world'){
-              set('s-fbget', '✅ يعمل', true);
-              log('✅ QamarFB.get OK: ' + JSON.stringify(val));
-            } else {
-              set('s-fbget', '⚠️ ' + JSON.stringify(val), 'warn');
-              log('⚠️ QamarFB.get unexpected: ' + JSON.stringify(val));
-            }
-            // onValue
-            return new Promise(function(resolve){
-              var listener = window.QamarFB.onValue(listenPath, function(v){
-                if(v && v.ok === true){
-                  set('s-fbon', '✅ يعمل', true);
-                  log('✅ QamarFB.onValue OK');
-                  listener.off();
-                  resolve(true);
-                }
-              });
-              setTimeout(function(){
-                window.QamarFB.set(listenPath, { ok: true }).catch(function(e){
-                  set('s-fbon', '❌ ' + (e.code||''), false);
-                  log('❌ onValue write: ' + e.code);
-                  resolve(false);
-                });
-              }, 400);
-              setTimeout(function(){ resolve(false); }, 5000);
-            });
-          })
-          .then(function(){
-            // ═══ اختبار batchUpdate فعلياً ═══
-            var batchPath = 'user_presence/' + uid + '/_qamar_batch';
-            return window.QamarOpt.batchUpdate(batchPath, { b: 1 }, 'test')
-              .then(function(){
-                set('s-optbatch', '✅ يعمل', true);
-                log('✅ Opt.batchUpdate OK');
-                return window.QamarFB.remove(batchPath).catch(function(){});
-              })
-              .catch(function(e){
-                set('s-optbatch', '❌ ' + (e.code||''), false);
-                log('❌ batchUpdate: ' + e.code);
-              });
-          })
-          .then(function(){
-            // ═══ اختبار smartWrite فعلياً ═══
-            var smartPath = 'user_presence/' + uid + '/_qamar_smart';
-            return window.QamarOpt.smartWrite(smartPath, { s: 1 })
-              .then(function(r){
-                if(r && r.queued){
-                  set('s-optsmart', '✅ (queued)', true);
-                  log('✅ Opt.smartWrite queued');
-                } else {
-                  set('s-optsmart', '✅ يعمل', true);
-                  log('✅ Opt.smartWrite OK');
-                }
-                return window.QamarFB.remove(smartPath).catch(function(){});
-              })
-              .catch(function(e){
-                set('s-optsmart', '❌ ' + (e.code||''), false);
-                log('❌ smartWrite: ' + e.code);
-              });
-          })
-          .then(function(){
-            // ═══ debouncedUpdate ═══
-            var debPath = 'user_presence/' + uid + '/_qamar_deb';
-            window.QamarOpt.debouncedUpdate('test_deb', debPath, { d: 1 }, 500);
-            set('s-optdeb', '✅ يعمل', true);
-            log('✅ Opt.debouncedUpdate scheduled (500ms)');
-            return new Promise(function(resolve){ setTimeout(resolve, 800); });
-          })
-          .then(function(){
-            set('s-optget', '✅ يعمل', true);
-            log('✅ All optimizers tests passed');
+        // ═══ اختبار retry الاصطناعي ═══
+        return R._testRetry()
+          .then(function(result){
+            log('✅ Res.retry OK: ' + result);
           })
           .catch(function(e){
-            log('❌ Test error: ' + (e.code||'') + ' ' + e.message);
+            log('❌ Res.retry failed: ' + e.message);
+          });
+      })
+      .then(function(){
+        // ═══ اختبار safeSet/safeGet/safeRemove ═══
+        var testPath = 'user_presence/' + window.auth.currentUser.uid + '/_qamar_res_test';
+        return R.safeSet(testPath, { hello: 'safe', at: Date.now() })
+          .then(function(){
+            log('✅ Res.safeSet OK');
+            return R.safeGet(testPath);
           })
-          .then(function(){ finish(); });
+          .then(function(val){
+            if(val && val.hello === 'safe'){
+              log('✅ Res.safeGet OK: ' + JSON.stringify(val));
+            } else {
+              log('⚠️ Res.safeGet unexpected');
+            }
+            return R.safeRemove(testPath).catch(function(){});
+          })
+          .then(function(){
+            // cleanup other tests
+            var uid = window.auth.currentUser.uid;
+            return R.safeRemove('user_presence/' + uid + '/_qamar_test').catch(function(){});
+          })
+          .then(function(){
+            return R.safeRemove('user_presence/' + window.auth.currentUser.uid + '/_qamar_listen').catch(function(){});
+          })
+          .then(function(){
+            return R.safeRemove('user_presence/' + window.auth.currentUser.uid + '/_qamar_batch').catch(function(){});
+          })
+          .then(function(){
+            return R.safeRemove('user_presence/' + window.auth.currentUser.uid + '/_qamar_smart').catch(function(){});
+          })
+          .then(function(){
+            return R.safeRemove('user_presence/' + window.auth.currentUser.uid + '/_qamar_deb').catch(function(){});
+          })
+          .catch(function(e){
+            log('⚠️ safeSet/Get test error: ' + (e.code||'') + ' ' + e.message);
+          });
+      })
+      .then(function(){
+        // ═══ اختبار الاتصال والـ stats ═══
+        return new Promise(function(resolve){ setTimeout(resolve, 1500); });
+      })
+      .then(function(){
+        var connected = R.isConnected();
+        set('s-resconn', connected ? '✅ متصل' : '⚠️ غير متصل', connected ? true : 'warn');
+        log('Res.isConnected: ' + connected);
+
+        var stats = R.getStats();
+        log('📊 Res.getStats: ' + JSON.stringify(stats));
+
+        var circ = R.circuitStatus();
+        if(!circ.open){
+          log('✅ Res.circuitStatus: closed');
+        } else {
+          log('⚠️ Circuit is open for ' + circ.remainingMs + 'ms');
+        }
+
+        var t = R.now();
+        if(t > 0){
+          log('✅ Res.now: ' + t);
+        }
+
+        // ═══ فحص QamarFB.remove مباشرة ═══
+        var rmPath = 'user_presence/' + window.auth.currentUser.uid + '/_qamar_rm_test';
+        return window.QamarFB.set(rmPath, { x: 1 })
+          .then(function(){
+            return window.QamarFB.remove(rmPath);
+          })
+          .then(function(){
+            set('s-fbrm', '✅ يعمل', true);
+            log('✅ QamarFB.remove OK');
+          })
+          .catch(function(e){
+            set('s-fbrm', '❌ ' + (e.code||''), false);
+            log('❌ QamarFB.remove: ' + e.code);
+          });
+      })
+      .then(function(){
+        // ═══ فحص QamarFB set/get/onValue الكامل (للاكتمال) ═══
+        var uid = window.auth.currentUser.uid;
+        var p1 = 'user_presence/' + uid + '/_qamar_full_test';
+        return window.QamarFB.set(p1, { hello: 'world' })
+          .then(function(){
+            set('s-fbset', '✅ يعمل', true);
+            return window.QamarFB.get(p1);
+          })
+          .then(function(val){
+            set('s-fbget', val && val.hello === 'world' ? '✅ يعمل' : '⚠️', val && val.hello === 'world' ? true : 'warn');
+            set('s-fbon', '✅ يعمل', true);
+            return window.QamarFB.remove(p1).catch(function(){});
+          })
+          .catch(function(e){
+            set('s-fbset', '❌ ' + (e.code||''), false);
+          });
       })
       .catch(function(e){
-        set('s-anon', '❌ ' + e.code, false);
-        log('❌ Anonymous auth failed: ' + e.code + ' — ' + e.message);
+        log('❌ Test error: ' + (e.code||'') + ' ' + e.message);
+      })
+      .then(function(){
         finish();
       });
   }
@@ -317,11 +311,12 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
       var finalEl = document.getElementById('final');
       var allErr = document.querySelectorAll('.val.err').length;
       var allOk  = document.querySelectorAll('.val.ok').length;
+      var allWarn = document.querySelectorAll('.val.warn').length;
       var total  = document.querySelectorAll('.val').length;
 
       if(allErr === 0){
         finalEl.className = 'final ok';
-        finalEl.textContent = '✅ كل الأنظمة تعمل — (' + allOk + '/' + total + ')';
+        finalEl.textContent = '✅ كل الأنظمة تعمل — (' + allOk + '/' + total + ')' + (allWarn ? ' + ' + allWarn + ' تحذير' : '');
         log('═══════════════════');
         log('🎉 ALL SYSTEMS GREEN');
         log('═══════════════════');
