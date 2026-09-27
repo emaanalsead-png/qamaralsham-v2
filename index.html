@@ -55,7 +55,7 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
   margin-top:14px;text-align:right;
   background:rgba(0,0,0,.6);border-radius:8px;
   padding:10px;font-family:monospace;font-size:10.5px;
-  color:#c084fc;max-height:180px;overflow-y:auto;
+  color:#c084fc;max-height:200px;overflow-y:auto;
   direction:ltr;text-align:left;line-height:1.5;
 }
 .log div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
@@ -89,7 +89,7 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
 <!-- Test Panel -->
 <div class="box">
   <h1>🌙 قمر الشام v2</h1>
-  <div class="sub">لوحة اختبار المرحلة 1 — core</div>
+  <div class="sub">لوحة اختبار — المرحلة 1 + 2 (جاري)</div>
 
   <div class="status-list" id="status-list">
     <div class="row"><span class="name">Firebase SDK</span><span class="val" id="s-firebase">⏳</span></div>
@@ -98,10 +98,15 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
     <div class="row"><span class="name">core/utils.js</span><span class="val" id="s-utils">⏳</span></div>
     <div class="row"><span class="name">core/state.js</span><span class="val" id="s-state">⏳</span></div>
     <div class="row"><span class="name">core/boot.js</span><span class="val" id="s-boot">⏳</span></div>
+    <div class="row"><span class="name">firebase/firebase.js</span><span class="val" id="s-fbfile">⏳</span></div>
     <div class="row"><span class="name">Firebase init</span><span class="val" id="s-fbinit">⏳</span></div>
+    <div class="row"><span class="name">QamarFB.get()</span><span class="val" id="s-fbget">⏳</span></div>
+    <div class="row"><span class="name">QamarFB.set()</span><span class="val" id="s-fbset">⏳</span></div>
+    <div class="row"><span class="name">QamarFB.onValue()</span><span class="val" id="s-fbon">⏳</span></div>
     <div class="row"><span class="name">الرتب</span><span class="val" id="s-ranks">⏳</span></div>
     <div class="row"><span class="name">الغرف</span><span class="val" id="s-rooms">⏳</span></div>
     <div class="row"><span class="name">EventBus</span><span class="val" id="s-bus">⏳</span></div>
+    <div class="row"><span class="name">encodeEmail</span><span class="val" id="s-encode">⏳</span></div>
   </div>
 
   <div class="final" id="final">⏳ جاري الفحص...</div>
@@ -114,6 +119,7 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
 <script src="core/constants.js"></script>
 <script src="core/utils.js"></script>
 <script src="core/state.js"></script>
+<script src="firebase/firebase.js"></script>
 <script src="core/boot.js"></script>
 
 <script>
@@ -133,7 +139,7 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
     el.className = 'val ' + (ok ? 'ok' : 'err');
   }
 
-  // wait a moment for boot to run
+  // انتظر قليلاً حتى يبدأ boot
   setTimeout(function(){
     // Firebase SDK
     if(typeof firebase !== 'undefined'){
@@ -144,49 +150,54 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
       log('❌ Firebase SDK missing');
     }
 
-    // config.js
+    // core/config.js
     if(typeof window.waitForFirebase === 'function'){
       set('s-config', '✅ يعمل', true);
       log('config.js: waitForFirebase OK');
     } else {
       set('s-config', '❌ فشل', false);
-      log('❌ config.js: waitForFirebase missing');
+      log('❌ config.js missing');
     }
 
-    // constants.js
+    // core/constants.js
     if(window.QAMAR && window.QAMAR.ROOMS){
       set('s-constants', '✅ يعمل', true);
       log('constants.js: QAMAR loaded');
     } else {
       set('s-constants', '❌ فشل', false);
-      log('❌ constants.js: QAMAR missing');
     }
 
-    // utils.js
+    // core/utils.js
     if(typeof window.escapeHtml === 'function'){
       set('s-utils', '✅ يعمل', true);
       log('utils.js: escapeHtml OK');
     } else {
       set('s-utils', '❌ فشل', false);
-      log('❌ utils.js: escapeHtml missing');
     }
 
-    // state.js
+    // core/state.js
     if(window.AppState && window.EventBus){
       set('s-state', '✅ يعمل', true);
       log('state.js: AppState + EventBus OK');
     } else {
       set('s-state', '❌ فشل', false);
-      log('❌ state.js: missing');
     }
 
-    // boot.js
+    // core/boot.js
     if(window.QamarBoot){
       set('s-boot', '✅ يعمل', true);
       log('boot.js: QamarBoot OK');
     } else {
       set('s-boot', '❌ فشل', false);
-      log('❌ boot.js: QamarBoot missing');
+    }
+
+    // firebase/firebase.js
+    if(window.QamarFB){
+      set('s-fbfile', '✅ يعمل', true);
+      log('firebase.js: QamarFB loaded');
+    } else {
+      set('s-fbfile', '❌ فشل', false);
+      log('❌ firebase.js: QamarFB missing');
     }
 
     // Firebase init
@@ -195,28 +206,25 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
       log('Firebase database instance ready');
     } else {
       set('s-fbinit', '⏳ ينتظر', false);
-      log('⏳ Firebase database still initializing');
     }
 
-    // Ranks
+    // الرتب
     if(window.QAMAR && window.QAMAR.RANKS_ORDERED){
-      var n = window.QAMAR.RANKS_ORDERED.length;
-      set('s-ranks', '✅ ' + n + ' رتبة', true);
-      log('Ranks: ' + n);
+      set('s-ranks', '✅ ' + window.QAMAR.RANKS_ORDERED.length + ' رتبة', true);
+      log('Ranks: ' + window.QAMAR.RANKS_ORDERED.length);
     } else {
       set('s-ranks', '❌', false);
     }
 
-    // Rooms
+    // الغرف
     if(window.QAMAR && window.QAMAR.ROOMS){
-      var r = Object.keys(window.QAMAR.ROOMS).length;
-      set('s-rooms', '✅ ' + r + ' غرفة', true);
-      log('Rooms: ' + r);
+      set('s-rooms', '✅ ' + Object.keys(window.QAMAR.ROOMS).length + ' غرفة', true);
+      log('Rooms: ' + Object.keys(window.QAMAR.ROOMS).length);
     } else {
       set('s-rooms', '❌', false);
     }
 
-    // EventBus test
+    // EventBus
     try{
       var got = false;
       window.EventBus.once('test:ping', function(){ got = true; });
@@ -225,29 +233,101 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
         set('s-bus', '✅ يعمل', true);
         log('EventBus emit/on OK');
       } else {
-        set('s-bus', '❌ لا يعمل', false);
+        set('s-bus', '❌', false);
       }
     }catch(e){
       set('s-bus', '❌ خطأ', false);
-      log('EventBus error: ' + e.message);
     }
 
-    // Final
-    var finalEl = document.getElementById('final');
-    var allOk = document.querySelectorAll('.val.ok').length;
-    var allErr = document.querySelectorAll('.val.err').length;
-
-    if(allOk >= 8 && allErr <= 1){
-      finalEl.className = 'final ok';
-      finalEl.textContent = '✅ المرحلة 1 مكتملة — كل الأنظمة تعمل!';
-      log('═══════════════════');
-      log('🎉 ALL SYSTEMS GREEN');
-      log('═══════════════════');
+    // encodeEmail
+    if(window.QamarFB && typeof window.QamarFB.encodeEmail === 'function'){
+      var encoded = window.QamarFB.encodeEmail('test@example.com');
+      if(encoded === 'test_AT_example_DOT_com'){
+        set('s-encode', '✅ يعمل', true);
+        log('encodeEmail OK: ' + encoded);
+      } else {
+        set('s-encode', '⚠️ غير متوقع', false);
+        log('encodeEmail returned: ' + encoded);
+      }
     } else {
-      finalEl.className = 'final err';
-      finalEl.textContent = '⚠️ بعض الأنظمة فشلت — راجع السجل';
-      log('❌ ' + allErr + ' أنظمة فشلت');
+      set('s-encode', '❌', false);
     }
+
+    // اختبر QamarFB.get/set/onValue
+    if(window.QamarFB && window.QamarFB.isReady()){
+
+      // TEST 1: set + get
+      var testPath = 'qamar_test/' + Date.now();
+      window.QamarFB.set(testPath, { hello: 'world', at: Date.now() })
+        .then(function(){
+          set('s-fbset', '✅ يعمل', true);
+          log('QamarFB.set OK: ' + testPath);
+          return window.QamarFB.get(testPath);
+        })
+        .then(function(val){
+          if(val && val.hello === 'world'){
+            set('s-fbget', '✅ يعمل', true);
+            log('QamarFB.get OK: hello=' + val.hello);
+          } else {
+            set('s-fbget', '⚠️ بيانات خطأ', false);
+            log('QamarFB.get unexpected: ' + JSON.stringify(val));
+          }
+          // احذف الاختبار
+          return window.QamarFB.remove(testPath);
+        })
+        .then(function(){
+          log('test cleanup done');
+        })
+        .catch(function(e){
+          log('❌ QamarFB test error: ' + e.message);
+          set('s-fbget', '❌', false);
+          set('s-fbset', '❌', false);
+        });
+
+      // TEST 2: onValue
+      var listenPath = 'qamar_test_listen/' + Date.now();
+      var ref = window.QamarFB.onValue(listenPath, function(val){
+        if(val && val.ok === true){
+          set('s-fbon', '✅ يعمل', true);
+          log('QamarFB.onValue OK');
+          ref.off();
+          window.QamarFB.remove(listenPath);
+        }
+      });
+      setTimeout(function(){
+        window.QamarFB.set(listenPath, { ok: true });
+      }, 300);
+
+    } else {
+      set('s-fbset', '⏳', false);
+      set('s-fbget', '⏳', false);
+      set('s-fbon', '⏳', false);
+      log('⏳ Firebase not ready — skip write tests');
+    }
+
+    // Final summary
+    setTimeout(function(){
+      var finalEl = document.getElementById('final');
+      var allOk = document.querySelectorAll('.val.ok').length;
+      var allErr = document.querySelectorAll('.val.err').length;
+      var total = document.querySelectorAll('.val').length;
+
+      if(allErr === 0 && allOk >= total - 2){
+        finalEl.className = 'final ok';
+        finalEl.textContent = '✅ المرحلة 1 + firebase.js تعمل!';
+        log('═══════════════════');
+        log('🎉 ALL SYSTEMS GREEN');
+        log('═══════════════════');
+      } else if(allErr > 0){
+        finalEl.className = 'final err';
+        finalEl.textContent = '⚠️ ' + allErr + ' أنظمة فشلت';
+        log('❌ ' + allErr + ' systems failed');
+      } else {
+        finalEl.className = 'final ok';
+        finalEl.textContent = '✅ ' + allOk + ' نظام جاهز، ' + (total - allOk - allErr) + ' قيد الانتظار';
+      }
+    }, 3000);
+
   }, 2500);
 })();
 </script>
