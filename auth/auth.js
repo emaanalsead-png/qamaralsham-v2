@@ -40,6 +40,8 @@
             'auth/too-many-requests':       'محاولات كثيرة — حاول لاحقاً',
             'auth/network-request-failed':  'تعذر الاتصال — تحقق من الإنترنت',
             'auth/requires-recent-login':   'أعد تسجيل الدخول لإتمام العملية',
+            'auth/credential-already-in-use': 'هذا البريد مرتبط بحساب آخر',
+            'auth/provider-already-linked': 'هذا البريد مرتبط بحسابك مسبقاً',
             'auth/operation-not-supported-in-this-environment': 'العملية غير مدعومة في هذا المتصفح',
             'auth/unauthorized-domain':     'هذا النطاق غير مصرّح به في Firebase'
         }
@@ -55,8 +57,7 @@
         authUnsubscribe: null,
         listeners: [],
         lastSignInAt: 0,
-        _signingOut: false,
-        _switching: false
+        _signingOut: false
     };
 
     /* ══════════════════════════════════════════════ */
@@ -178,20 +179,11 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Internal: signOut first (لتبديل الحساب)         */
-    /* ══════════════════════════════════════════════ */
-    function _signOutCurrent() {
-        if (!window.auth || !window.auth.currentUser) return Promise.resolve();
-        return window.auth.signOut().catch(function () {});
-    }
-
-    /* ══════════════════════════════════════════════ */
     /* Guest (Anonymous) sign-in                       */
     /* ══════════════════════════════════════════════ */
     function signInAsGuest() {
         if (!window.auth) return Promise.reject(new Error('Firebase Auth غير متاح'));
 
-        // إذا مسجل فعلاً كزائر
         if (State.currentUser && State.currentUser.isAnonymous) {
             return Promise.resolve({
                 user: State.currentUser,
@@ -201,9 +193,8 @@
             });
         }
 
-        // إذا مسجل بحساب عضو → لا تسجل دخول زائر
         if (State.currentUser && !State.currentUser.isAnonymous) {
-            return Promise.reject(new Error('أنت مسجل حالياً كعضو — اخرج أولاً'));
+            return Promise.reject(new Error('أنت مسجل حالياً كعضو'));
         }
 
         const doSign = function () { return window.auth.signInAnonymously(); };
@@ -231,17 +222,20 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Email/Password sign-in                          */
+    /* Email/Password sign-in (existing member)        */
     /* ══════════════════════════════════════════════ */
+    // ملاحظة: هذا لتسجيل الدخول إلى حساب موجود
+    // إذا المستخدم الحالي زائر → يخرج أولاً (يستبدل الحساب)
     function signIn(email, password) {
         if (!email || !password) {
             return Promise.reject(_wrapError({ code: 'custom/missing', message: 'البريد وكلمة المرور مطلوبان' }));
         }
         if (!window.auth) return Promise.reject(new Error('Firebase Auth غير متاح'));
 
-        // إذا زائر مسجل → اخرج أولاً
-        const pre = (State.currentUser && State.currentUser.isAnonymous)
-            ? _signOutCurrent()
+        // إذا الزائر الحالي يريد الدخول لحساب عضو → يحتاج خروج (استبدال)
+        const needSignOut = !!(State.currentUser && State.currentUser.isAnonymous);
+        const pre = needSignOut
+            ? window.auth.signOut().catch(function () {})
             : Promise.resolve();
 
         return pre
@@ -269,10 +263,11 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Register new member (email/password)            */
+    /* Register / Upgrade to member                    */
     /* ══════════════════════════════════════════════ */
-    // ⚠️ ملاحظة: إذا كان المستخدم زائراً → يتم تسجيل خروجه أولاً
-    // ثم إنشاء حساب عضو جديد مستقل
+    // 🎯 سلوكان:
+    //   1) زائر → linkWithCredential (نفس UID — بدون خروج)
+    //   2) غير مسجل → createUserWithEmailAndPassword (جديد)
     function register(email, password, options) {
         options = options || {};
         if (!email || !password) {
@@ -283,9 +278,54 @@
         }
         if (!window.auth) return Promise.reject(new Error('Firebase Auth غير متاح'));
 
-        // إذا زائر مسجل → اخرج أولاً (لا ترقية)
-        const pre = (State.currentUser && State.currentUser.isAnonymous)
-            ? _signOutCurrent()
+        const isGuestNow = !!(State.currentUser && State.currentUser.isAnonymous);
+
+        // 1) زائر → linkWithCredential (ترقية داخلية — نفس UID)
+        if (isGuestNow) {
+            const cred = firebase.auth.EmailAuthProvider.credential(email, password);
+            return State.currentUser.linkWithCredential(cred)
+                .then(function (linked) {
+                    State.currentUser = linked.user;
+                    Logger.info('✅ Guest upgraded to member:', email, '(UID preserved)');
+
+                    // حدّث displayName إذا طُلب
+                    if (options.displayName && linked.user.updateProfile) {
+                        return linked.user.updateProfile({ displayName: options.displayName })
+                            .then(function () { return linked; })
+                            .catch(function () { return linked; });
+                    }
+                    return linked;
+                })
+                .then(function (linked) {
+                    if (window.EventBus) {
+                        try {
+                            window.EventBus.emit('auth:upgraded', linked.user);
+                            window.EventBus.emit('auth:register', linked.user);
+                        } catch (e) {}
+                    }
+                    return {
+                        user: linked.user,
+                        uid: linked.user.uid,
+                        isGuest: false,
+                        isMember: true,
+                        upgraded: true,
+                        uidPreserved: true
+                    };
+                })
+                .catch(function (err) {
+                    Logger.error('upgrade (link) failed:', err.code);
+                    if (window.EventBus) {
+                        try { window.EventBus.emit('auth:error', _wrapError(err)); } catch (e) {}
+                    }
+                    throw _wrapError(err);
+                });
+        }
+
+        // 2) غير مسجل (أو عضو مسجل يريد إنشاء حساب آخر) → إنشاء جديد
+        //    ملاحظة: إذا عضو مسجل → نخرج أولاً
+        const needSignOut = !!(State.currentUser && !State.currentUser.isAnonymous);
+        const pre = needSignOut
+            ? window.auth.signOut().catch(function () {})
             : Promise.resolve();
 
         return pre
@@ -311,7 +351,8 @@
                     user: cred.user,
                     uid: cred.user.uid,
                     isGuest: false,
-                    isMember: true
+                    isMember: true,
+                    upgraded: false
                 };
             })
             .catch(function (err) {
@@ -436,7 +477,6 @@
         return !!(u && !u.isAnonymous && u.email);
     }
 
-    // alias — نفس isEmailUser لكن اسم أوضح
     function isMember() {
         return isEmailUser();
     }
@@ -525,7 +565,7 @@
         // Guest
         signInAsGuest: signInAsGuest,
 
-        // Email (members)
+        // Email
         signIn: signIn,
         register: register,
         signOut: signOut,
