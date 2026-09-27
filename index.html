@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌙 قمر الشام v2 — اختبار</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+
+<!-- Firebase SDK v9 compat -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Cairo',system-ui,sans-serif;
+  background:linear-gradient(180deg,#050508,#0a0a15);
+  color:#f3f4f6;min-height:100vh;
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;direction:rtl;
+}
+.box{
+  max-width:520px;width:100%;
+  background:#0a0a15;border:2px solid #d4af37;
+  border-radius:20px;padding:26px 20px;
+  text-align:center;
+  box-shadow:0 0 40px rgba(255,215,0,.15);
+}
+h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
+.sub{color:#9ca3af;font-size:13px;margin-bottom:18px}
+.status-list{
+  text-align:right;background:rgba(0,0,0,.4);
+  border-radius:10px;padding:14px;margin:16px 0;
+  border:1px solid rgba(212,175,55,.2);
+}
+.row{
+  display:flex;justify-content:space-between;
+  padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);
+  font-size:13px;
+}
+.row:last-child{border-bottom:none}
+.row .name{color:#9ca3af;font-weight:700}
+.row .val{color:#ffd700;font-weight:900}
+.ok{color:#4ade80 !important}
+.err{color:#ff4444 !important}
+.final{
+  margin-top:16px;padding:12px;
+  border-radius:10px;font-weight:900;font-size:14px;
+}
+.final.ok{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.4)}
+.final.err{background:rgba(239,68,68,.15);color:#ff4444;border:1px solid rgba(239,68,68,.4)}
+.log{
+  margin-top:14px;text-align:right;
+  background:rgba(0,0,0,.6);border-radius:8px;
+  padding:10px;font-family:monospace;font-size:10.5px;
+  color:#c084fc;max-height:180px;overflow-y:auto;
+  direction:ltr;text-align:left;line-height:1.5;
+}
+.log div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+#qamar-boot-loader{
+  position:fixed;inset:0;
+  background:#050508;z-index:9999;
+  display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:16px;
+  transition:opacity .4s;
+}
+#qamar-boot-loader.qamar-boot-hide{opacity:0;pointer-events:none}
+.spinner{
+  width:50px;height:50px;
+  border:4px solid rgba(212,175,55,.2);
+  border-top-color:#ffd700;border-radius:50%;
+  animation:spin 1s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#qamar-boot-status{color:#ffd700;font-weight:900;font-size:14px}
+#qamar-boot-status.ready{color:#4ade80}
+</style>
+</head>
+<body>
+
+<!-- Loader -->
+<div id="qamar-boot-loader">
+  <div class="spinner"></div>
+  <div id="qamar-boot-status">جاري التحميل...</div>
+</div>
+
+<!-- Test Panel -->
+<div class="box">
+  <h1>🌙 قمر الشام v2</h1>
+  <div class="sub">لوحة اختبار المرحلة 1 — core</div>
+
+  <div class="status-list" id="status-list">
+    <div class="row"><span class="name">Firebase SDK</span><span class="val" id="s-firebase">⏳</span></div>
+    <div class="row"><span class="name">core/config.js</span><span class="val" id="s-config">⏳</span></div>
+    <div class="row"><span class="name">core/constants.js</span><span class="val" id="s-constants">⏳</span></div>
+    <div class="row"><span class="name">core/utils.js</span><span class="val" id="s-utils">⏳</span></div>
+    <div class="row"><span class="name">core/state.js</span><span class="val" id="s-state">⏳</span></div>
+    <div class="row"><span class="name">core/boot.js</span><span class="val" id="s-boot">⏳</span></div>
+    <div class="row"><span class="name">Firebase init</span><span class="val" id="s-fbinit">⏳</span></div>
+    <div class="row"><span class="name">الرتب</span><span class="val" id="s-ranks">⏳</span></div>
+    <div class="row"><span class="name">الغرف</span><span class="val" id="s-rooms">⏳</span></div>
+    <div class="row"><span class="name">EventBus</span><span class="val" id="s-bus">⏳</span></div>
+  </div>
+
+  <div class="final" id="final">⏳ جاري الفحص...</div>
+
+  <div class="log" id="log"><div>📋 سجل التشغيل:</div></div>
+</div>
+
+<!-- Core Scripts — order matters! -->
+<script src="core/config.js"></script>
+<script src="core/constants.js"></script>
+<script src="core/utils.js"></script>
+<script src="core/state.js"></script>
+<script src="core/boot.js"></script>
+
+<script>
+(function(){
+  var logEl = document.getElementById('log');
+  function log(msg){
+    var d = document.createElement('div');
+    d.textContent = '› ' + msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function set(id, txt, ok){
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = txt;
+    el.className = 'val ' + (ok ? 'ok' : 'err');
+  }
+
+  // wait a moment for boot to run
+  setTimeout(function(){
+    // Firebase SDK
+    if(typeof firebase !== 'undefined'){
+      set('s-firebase', '✅ محمّل', true);
+      log('Firebase SDK loaded, v' + (firebase.SDK_VERSION || '?'));
+    } else {
+      set('s-firebase', '❌ مفقود', false);
+      log('❌ Firebase SDK missing');
+    }
+
+    // config.js
+    if(typeof window.waitForFirebase === 'function'){
+      set('s-config', '✅ يعمل', true);
+      log('config.js: waitForFirebase OK');
+    } else {
+      set('s-config', '❌ فشل', false);
+      log('❌ config.js: waitForFirebase missing');
+    }
+
+    // constants.js
+    if(window.QAMAR && window.QAMAR.ROOMS){
+      set('s-constants', '✅ يعمل', true);
+      log('constants.js: QAMAR loaded');
+    } else {
+      set('s-constants', '❌ فشل', false);
+      log('❌ constants.js: QAMAR missing');
+    }
+
+    // utils.js
+    if(typeof window.escapeHtml === 'function'){
+      set('s-utils', '✅ يعمل', true);
+      log('utils.js: escapeHtml OK');
+    } else {
+      set('s-utils', '❌ فشل', false);
+      log('❌ utils.js: escapeHtml missing');
+    }
+
+    // state.js
+    if(window.AppState && window.EventBus){
+      set('s-state', '✅ يعمل', true);
+      log('state.js: AppState + EventBus OK');
+    } else {
+      set('s-state', '❌ فشل', false);
+      log('❌ state.js: missing');
+    }
+
+    // boot.js
+    if(window.QamarBoot){
+      set('s-boot', '✅ يعمل', true);
+      log('boot.js: QamarBoot OK');
+    } else {
+      set('s-boot', '❌ فشل', false);
+      log('❌ boot.js: QamarBoot missing');
+    }
+
+    // Firebase init
+    if(window.db){
+      set('s-fbinit', '✅ متصل', true);
+      log('Firebase database instance ready');
+    } else {
+      set('s-fbinit', '⏳ ينتظر', false);
+      log('⏳ Firebase database still initializing');
+    }
+
+    // Ranks
+    if(window.QAMAR && window.QAMAR.RANKS_ORDERED){
+      var n = window.QAMAR.RANKS_ORDERED.length;
+      set('s-ranks', '✅ ' + n + ' رتبة', true);
+      log('Ranks: ' + n);
+    } else {
+      set('s-ranks', '❌', false);
+    }
+
+    // Rooms
+    if(window.QAMAR && window.QAMAR.ROOMS){
+      var r = Object.keys(window.QAMAR.ROOMS).length;
+      set('s-rooms', '✅ ' + r + ' غرفة', true);
+      log('Rooms: ' + r);
+    } else {
+      set('s-rooms', '❌', false);
+    }
+
+    // EventBus test
+    try{
+      var got = false;
+      window.EventBus.once('test:ping', function(){ got = true; });
+      window.EventBus.emit('test:ping');
+      if(got){
+        set('s-bus', '✅ يعمل', true);
+        log('EventBus emit/on OK');
+      } else {
+        set('s-bus', '❌ لا يعمل', false);
+      }
+    }catch(e){
+      set('s-bus', '❌ خطأ', false);
+      log('EventBus error: ' + e.message);
+    }
+
+    // Final
+    var finalEl = document.getElementById('final');
+    var allOk = document.querySelectorAll('.val.ok').length;
+    var allErr = document.querySelectorAll('.val.err').length;
+
+    if(allOk >= 8 && allErr <= 1){
+      finalEl.className = 'final ok';
+      finalEl.textContent = '✅ المرحلة 1 مكتملة — كل الأنظمة تعمل!';
+      log('═══════════════════');
+      log('🎉 ALL SYSTEMS GREEN');
+      log('═══════════════════');
+    } else {
+      finalEl.className = 'final err';
+      finalEl.textContent = '⚠️ بعض الأنظمة فشلت — راجع السجل';
+      log('❌ ' + allErr + ' أنظمة فشلت');
+    }
+  }, 2500);
+})();
+</script>
+
+</body>
+</html>
