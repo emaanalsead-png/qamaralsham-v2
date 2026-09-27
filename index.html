@@ -6,6 +6,7 @@
 <title>🌙 قمر الشام v2 — اختبار</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
 
+<!-- Firebase SDK v9 compat -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -17,45 +18,51 @@ body{
   font-family:'Cairo',system-ui,sans-serif;
   background:linear-gradient(180deg,#050508,#0a0a15);
   color:#f3f4f6;min-height:100vh;
-  display:flex;align-items:center;justify-content:center;
-  padding:20px;direction:rtl;
+  display:flex;align-items:flex-start;justify-content:center;
+  padding:20px 12px 60px;direction:rtl;
 }
 .box{
-  max-width:560px;width:100%;
+  max-width:600px;width:100%;
   background:#0a0a15;border:2px solid #d4af37;
-  border-radius:20px;padding:26px 20px;
-  text-align:center;
+  border-radius:20px;padding:24px 18px;
   box-shadow:0 0 40px rgba(255,215,0,.15);
 }
-h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
-.sub{color:#9ca3af;font-size:13px;margin-bottom:18px}
+h1{color:#ffd700;font-size:22px;margin-bottom:6px;font-weight:900;text-align:center}
+.sub{color:#9ca3af;font-size:12px;margin-bottom:18px;text-align:center}
+.section-title{
+  color:#ffd700;font-size:13px;font-weight:900;
+  margin:16px 0 8px;padding-bottom:6px;
+  border-bottom:1px solid rgba(212,175,55,.25);
+}
 .status-list{
   text-align:right;background:rgba(0,0,0,.4);
-  border-radius:10px;padding:14px;margin:16px 0;
+  border-radius:10px;padding:12px;margin:10px 0;
   border:1px solid rgba(212,175,55,.2);
 }
 .row{
   display:flex;justify-content:space-between;
-  padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);
-  font-size:12.5px;
+  padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);
+  font-size:12px;
 }
 .row:last-child{border-bottom:none}
-.row .name{color:#9ca3af;font-weight:700}
-.row .val{color:#ffd700;font-weight:900}
+.row .name{color:#9ca3af;font-weight:700;flex:1;text-align:right}
+.row .val{color:#ffd700;font-weight:900;margin-right:10px}
 .ok{color:#4ade80 !important}
 .err{color:#ff4444 !important}
 .warn{color:#ff9800 !important}
+.skip{color:#6b7280 !important;opacity:.6}
 .final{
   margin-top:16px;padding:12px;
-  border-radius:10px;font-weight:900;font-size:14px;
+  border-radius:10px;font-weight:900;font-size:13px;text-align:center;
 }
 .final.ok{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.4)}
 .final.err{background:rgba(239,68,68,.15);color:#ff4444;border:1px solid rgba(239,68,68,.4)}
+.final.warn{background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.4)}
 .log{
-  margin-top:14px;text-align:right;
+  margin-top:12px;
   background:rgba(0,0,0,.6);border-radius:8px;
-  padding:10px;font-family:monospace;font-size:10.5px;
-  color:#c084fc;max-height:260px;overflow-y:auto;
+  padding:10px;font-family:monospace;font-size:10px;
+  color:#c084fc;max-height:250px;overflow-y:auto;
   direction:ltr;text-align:left;line-height:1.5;
 }
 .log div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
@@ -76,6 +83,14 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
 @keyframes spin{to{transform:rotate(360deg)}}
 #qamar-boot-status{color:#ffd700;font-weight:900;font-size:14px}
 #qamar-boot-status.ready{color:#4ade80}
+.loading-files{
+  margin-top:10px;padding:10px;
+  background:rgba(168,85,247,.1);
+  border:1px solid rgba(168,85,247,.3);
+  border-radius:8px;
+  font-size:11px;color:#c084fc;
+  text-align:center;
+}
 </style>
 </head>
 <body>
@@ -87,222 +102,324 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
 
 <div class="box">
   <h1>🌙 قمر الشام v2</h1>
-  <div class="sub">لوحة اختبار — المرحلة 1 + 2</div>
+  <div class="sub">لوحة اختبار شاملة — المرحلة 1 + 2 + 3+</div>
 
-  <div class="status-list" id="status-list">
-    <div class="row"><span class="name">Firebase SDK</span><span class="val" id="s-firebase">⏳</span></div>
-    <div class="row"><span class="name">core/config.js</span><span class="val" id="s-config">⏳</span></div>
-    <div class="row"><span class="name">core/constants.js</span><span class="val" id="s-constants">⏳</span></div>
-    <div class="row"><span class="name">core/utils.js</span><span class="val" id="s-utils">⏳</span></div>
-    <div class="row"><span class="name">core/state.js</span><span class="val" id="s-state">⏳</span></div>
-    <div class="row"><span class="name">core/boot.js</span><span class="val" id="s-boot">⏳</span></div>
-    <div class="row"><span class="name">firebase/firebase.js</span><span class="val" id="s-fbfile">⏳</span></div>
-    <div class="row"><span class="name">firebase/optimizers.js</span><span class="val" id="s-optfile">⏳</span></div>
-    <div class="row"><span class="name">firebase/resilience.js</span><span class="val" id="s-resfile">⏳</span></div>
-    <div class="row"><span class="name">firebase/cleaners.js</span><span class="val" id="s-clnfile">⏳</span></div>
-    <div class="row"><span class="name">auth/auth.js</span><span class="val" id="s-authfile">⏳</span></div>
-    <div class="row"><span class="name">Firebase init</span><span class="val" id="s-fbinit">⏳</span></div>
-    <div class="row"><span class="name">Auth wait</span><span class="val" id="s-authwait">⏳</span></div>
-    <div class="row"><span class="name">Sign in anonymously</span><span class="val" id="s-anon">⏳</span></div>
-    <div class="row"><span class="name">isLoggedIn()</span><span class="val" id="s-islogged">⏳</span></div>
-    <div class="row"><span class="name">isGuest()</span><span class="val" id="s-isguest">⏳</span></div>
-    <div class="row"><span class="name">isEmailUser()</span><span class="val" id="s-isemail">⏳</span></div>
-    <div class="row"><span class="name">getUid()</span><span class="val" id="s-getuid">⏳</span></div>
-    <div class="row"><span class="name">getIdToken()</span><span class="val" id="s-token">⏳</span></div>
-    <div class="row"><span class="name">onAuthChange()</span><span class="val" id="s-onchange">⏳</span></div>
-    <div class="row"><span class="name">translateError()</span><span class="val" id="s-translate">⏳</span></div>
-    <div class="row"><span class="name">signOut()</span><span class="val" id="s-signout">⏳</span></div>
-    <div class="row"><span class="name">Res.retry()</span><span class="val" id="s-resretry">⏳</span></div>
-    <div class="row"><span class="name">Cln.getStatus()</span><span class="val" id="s-clnstatus">⏳</span></div>
-    <div class="row"><span class="name">الرتب</span><span class="val" id="s-ranks">⏳</span></div>
-    <div class="row"><span class="name">الغرف</span><span class="val" id="s-rooms">⏳</span></div>
-    <div class="row"><span class="name">EventBus</span><span class="val" id="s-bus">⏳</span></div>
-  </div>
+  <div id="loading-info" class="loading-files">⏳ جاري تحميل الملفات...</div>
+
+  <div id="status-list" style="display:none"></div>
 
   <div class="final" id="final">⏳ جاري الفحص...</div>
 
   <div class="log" id="log"><div>📋 سجل التشغيل:</div></div>
 </div>
 
-<script src="core/config.js"></script>
-<script src="core/constants.js"></script>
-<script src="core/utils.js"></script>
-<script src="core/state.js"></script>
-<script src="firebase/firebase.js"></script>
-<script src="firebase/optimizers.js"></script>
-<script src="firebase/resilience.js"></script>
-<script src="firebase/cleaners.js"></script>
-<script src="auth/auth.js"></script>
-<script src="core/boot.js"></script>
-
 <script>
 (function(){
-  var logEl = document.getElementById('log');
+  'use strict';
+
+  /* ═══════════════════════════════════════════════════════
+      قائمة الملفات كاملة (72 ملف) — بترتيب التحميل الصحيح
+     ═══════════════════════════════════════════════════════ */
+  const FILES = [
+    // ─── Core (5) ───
+    { path: 'core/config.js',                    key: 'core_config',     label: 'core/config.js' },
+    { path: 'core/constants.js',                 key: 'core_constants',  label: 'core/constants.js' },
+    { path: 'core/utils.js',                     key: 'core_utils',      label: 'core/utils.js' },
+    { path: 'core/state.js',                     key: 'core_state',      label: 'core/state.js' },
+
+    // ─── Firebase (4) ───
+    { path: 'firebase/firebase.js',              key: 'fb_firebase',     label: 'firebase/firebase.js' },
+    { path: 'firebase/optimizers.js',            key: 'fb_opt',          label: 'firebase/optimizers.js' },
+    { path: 'firebase/resilience.js',            key: 'fb_res',          label: 'firebase/resilience.js' },
+    { path: 'firebase/cleaners.js',              key: 'fb_clean',        label: 'firebase/cleaners.js' },
+
+    // ─── Auth (4) ───
+    { path: 'auth/auth.js',                      key: 'auth_auth',       label: 'auth/auth.js' },
+    { path: 'auth/session.js',                   key: 'auth_session',    label: 'auth/session.js' },
+    { path: 'auth/identity.js',                  key: 'auth_identity',   label: 'auth/identity.js' },
+    { path: 'auth/ranks.js',                     key: 'auth_ranks',      label: 'auth/ranks.js' },
+
+    // ─── Security (5) ───
+    { path: 'security/device-guard.js',          key: 'sec_device',      label: 'security/device-guard.js' },
+    { path: 'security/audit.js',                 key: 'sec_audit',       label: 'security/audit.js' },
+    { path: 'security/bans.js',                  key: 'sec_bans',        label: 'security/bans.js' },
+    { path: 'security/reports.js',               key: 'sec_reports',     label: 'security/reports.js' },
+    { path: 'security/suspects.js',              key: 'sec_suspects',    label: 'security/suspects.js' },
+
+    // ─── Chat (4) ───
+    { path: 'chat/chat.js',                      key: 'chat_chat',       label: 'chat/chat.js' },
+    { path: 'chat/chat-input.js',                key: 'chat_input',      label: 'chat/chat-input.js' },
+    { path: 'chat/chat-ui.js',                   key: 'chat_ui',         label: 'chat/chat-ui.js' },
+    { path: 'chat/chat-effects.js',              key: 'chat_effects',    label: 'chat/chat-effects.js' },
+
+    // ─── Rooms (3) ───
+    { path: 'rooms/rooms.js',                    key: 'rooms_rooms',     label: 'rooms/rooms.js' },
+    { path: 'rooms/room-settings.js',            key: 'rooms_settings',  label: 'rooms/room-settings.js' },
+    { path: 'rooms/room-voice.js',               key: 'rooms_voice',     label: 'rooms/room-voice.js' },
+
+    // ─── PM (4) ───
+    { path: 'pm/pm.js',                          key: 'pm_pm',           label: 'pm/pm.js' },
+    { path: 'pm/pm-archiver.js',                 key: 'pm_archiver',     label: 'pm/pm-archiver.js' },
+    { path: 'pm/pm-monitor.js',                  key: 'pm_monitor',      label: 'pm/pm-monitor.js' },
+    { path: 'pm/pm-voice.js',                    key: 'pm_voice',        label: 'pm/pm-voice.js' },
+
+    // ─── Voice (3) ───
+    { path: 'voice/voice-system.js',             key: 'voice_sys',       label: 'voice/voice-system.js' },
+    { path: 'voice/voice-studio.js',             key: 'voice_studio',    label: 'voice/voice-studio.js' },
+    { path: 'voice/voice-monitor.js',            key: 'voice_monitor',   label: 'voice/voice-monitor.js' },
+
+    // ─── Bots (4) ───
+    { path: 'bots/bots.js',                      key: 'bots_bots',       label: 'bots/bots.js' },
+    { path: 'bots/bot-commands.js',              key: 'bots_cmds',       label: 'bots/bot-commands.js' },
+    { path: 'bots/bot-training.js',              key: 'bots_training',   label: 'bots/bot-training.js' },
+    { path: 'bots/guardian-inbox.js',            key: 'bots_guardian',   label: 'bots/guardian-inbox.js' },
+
+    // ─── King (3) ───
+    { path: 'king/king-room.js',                 key: 'king_room',       label: 'king/king-room.js' },
+    { path: 'king/king-actions.js',              key: 'king_actions',    label: 'king/king-actions.js' },
+    { path: 'king/king-queens.js',               key: 'king_queens',     label: 'king/king-queens.js' },
+
+    // ─── Stories (2) ───
+    { path: 'stories/stories.js',                key: 'stories_stories', label: 'stories/stories.js' },
+    { path: 'stories/stories-cleaner.js',        key: 'stories_clean',   label: 'stories/stories-cleaner.js' },
+
+    // ─── Media (4) ───
+    { path: 'media/uploader.js',                 key: 'media_upload',    label: 'media/uploader.js' },
+    { path: 'media/media-picker.js',             key: 'media_picker',    label: 'media/media-picker.js' },
+    { path: 'media/paint.js',                    key: 'media_paint',     label: 'media/paint.js' },
+    { path: 'media/styled-messages.js',          key: 'media_styled',    label: 'media/styled-messages.js' },
+
+    // ─── Effects (2) ───
+    { path: 'effects/name-effects.js',           key: 'eff_name',        label: 'effects/name-effects.js' },
+    { path: 'effects/frames-engine.js',          key: 'eff_frames',      label: 'effects/frames-engine.js' },
+
+    // ─── Notifications (2) ───
+    { path: 'notifications/notifications.js',    key: 'notif_notif',     label: 'notifications/notifications.js' },
+    { path: 'notifications/room-alerts.js',      key: 'notif_alerts',    label: 'notifications/room-alerts.js' },
+
+    // ─── UI (4) ───
+    { path: 'ui/ui-core.js',                     key: 'ui_core',         label: 'ui/ui-core.js' },
+    { path: 'ui/ui-nav.js',                      key: 'ui_nav',          label: 'ui/ui-nav.js' },
+    { path: 'ui/ui-input.js',                    key: 'ui_input',        label: 'ui/ui-input.js' },
+    { path: 'ui/ui-mobile.js',                   key: 'ui_mobile',       label: 'ui/ui-mobile.js' },
+
+    // ─── Guest (1) ───
+    { path: 'guest/guest.js',                    key: 'guest_guest',     label: 'guest/guest.js' },
+
+    // ─── Social (2) ───
+    { path: 'social/social.js',                  key: 'soc_social',      label: 'social/social.js' },
+    { path: 'social/profiles.js',                key: 'soc_profiles',    label: 'social/profiles.js' },
+
+    // ─── Misc (4) ───
+    { path: 'misc/dice.js',                      key: 'misc_dice',       label: 'misc/dice.js' },
+    { path: 'misc/youtube.js',                   key: 'misc_youtube',    label: 'misc/youtube.js' },
+    { path: 'misc/invisible.js',                 key: 'misc_invisible',  label: 'misc/invisible.js' },
+    { path: 'misc/islamic-library.js',           key: 'misc_islamic',    label: 'misc/islamic-library.js' },
+
+    // ─── Debug (1) ───
+    { path: 'debug/debug.js',                    key: 'debug_debug',     label: 'debug/debug.js' },
+
+    // ─── Boot (آخر شيء) ───
+    { path: 'core/boot.js',                      key: 'core_boot',       label: 'core/boot.js' }
+  ];
+
+  /* ═══════════════════════════════════════════════════════
+      الحالة
+     ═══════════════════════════════════════════════════════ */
+  const State = {
+    loaded: {},       // { key: true/false }
+    loadedCount: 0,
+    missingCount: 0,
+    startTime: Date.now()
+  };
+
+  const logEl = document.getElementById('log');
   function log(msg){
-    var d = document.createElement('div');
+    const d = document.createElement('div');
     d.textContent = '› ' + msg;
     logEl.appendChild(d);
     logEl.scrollTop = logEl.scrollHeight;
   }
-  function set(id, txt, ok){
-    var el = document.getElementById(id);
-    if(!el) return;
-    el.textContent = txt;
-    el.className = 'val ' + (ok === true ? 'ok' : ok === 'warn' ? 'warn' : 'err');
+
+  /* ═══════════════════════════════════════════════════════
+      تحقق من وجود ملف (HEAD request)
+     ═══════════════════════════════════════════════════════ */
+  function fileExists(url){
+    return fetch(url, { method: 'HEAD', cache: 'no-cache' })
+      .then(function(r){ return r.ok; })
+      .catch(function(){ return false; });
   }
 
-  function runTests(){
-    // ═══ فحوصات الملفات ═══
-    set('s-firebase', typeof firebase !== 'undefined' ? '✅ محمّل' : '❌', typeof firebase !== 'undefined');
-    set('s-config', typeof window.waitForFirebase === 'function' ? '✅ يعمل' : '❌', typeof window.waitForFirebase === 'function');
-    set('s-constants', (window.QAMAR && window.QAMAR.ROOMS) ? '✅ يعمل' : '❌', !!(window.QAMAR && window.QAMAR.ROOMS));
-    set('s-utils', typeof window.escapeHtml === 'function' ? '✅ يعمل' : '❌', typeof window.escapeHtml === 'function');
-    set('s-state', (window.AppState && window.EventBus) ? '✅ يعمل' : '❌', !!(window.AppState && window.EventBus));
-    set('s-boot', window.QamarBoot ? '✅ يعمل' : '❌', !!window.QamarBoot);
-    set('s-fbfile', window.QamarFB ? '✅ يعمل' : '❌', !!window.QamarFB);
-    set('s-optfile', window.QamarOpt ? '✅ يعمل' : '❌', !!window.QamarOpt);
-    set('s-resfile', window.QamarResilience ? '✅ يعمل' : '❌', !!window.QamarResilience);
-    set('s-clnfile', window.QamarCleaners ? '✅ يعمل' : '❌', !!window.QamarCleaners);
-    set('s-authfile', window.QamarAuth ? '✅ يعمل' : '❌', !!window.QamarAuth);
-    set('s-fbinit', window.db ? '✅ متصل' : '⏳', !!window.db);
+  /* ═══════════════════════════════════════════════════════
+      حمّل ملف <script>
+     ═══════════════════════════════════════════════════════ */
+  function loadScript(url){
+    return new Promise(function(resolve){
+      const s = document.createElement('script');
+      s.src = url;
+      s.async = false;   // حافظ على الترتيب
+      s.onload = function(){ resolve(true); };
+      s.onerror = function(){ resolve(false); };
+      document.head.appendChild(s);
+    });
+  }
 
-    set('s-ranks', (window.QAMAR && window.QAMAR.RANKS_ORDERED) ? '✅ ' + window.QAMAR.RANKS_ORDERED.length + ' رتبة' : '❌', !!(window.QAMAR && window.QAMAR.RANKS_ORDERED));
-    set('s-rooms', (window.QAMAR && window.QAMAR.ROOMS) ? '✅ ' + Object.keys(window.QAMAR.ROOMS).length + ' غرفة' : '❌', !!(window.QAMAR && window.QAMAR.ROOMS));
+  /* ═══════════════════════════════════════════════════════
+      حمّل كل الملفات بالتسلسل
+     ═══════════════════════════════════════════════════════ */
+  function loadAllFiles(){
+    log('🔍 فحص ' + FILES.length + ' ملف...');
 
-    try{
-      var got = false;
-      window.EventBus.once('t:ping', function(){ got = true; });
-      window.EventBus.emit('t:ping');
-      set('s-bus', got ? '✅ يعمل' : '❌', got);
-    }catch(e){ set('s-bus', '❌', false); }
+    let chain = Promise.resolve();
+    let checked = 0;
 
-    if(!window.QamarAuth){ log('❌ QamarAuth missing'); return finish(); }
-
-    var A = window.QamarAuth;
-
-    // ═══ اختبار الدوال ═══
-    set('s-islogged', typeof A.isLoggedIn === 'function' ? '✅ يعمل' : '❌', typeof A.isLoggedIn === 'function');
-    set('s-isguest', typeof A.isGuest === 'function' ? '✅ يعمل' : '❌', typeof A.isGuest === 'function');
-    set('s-isemail', typeof A.isEmailUser === 'function' ? '✅ يعمل' : '❌', typeof A.isEmailUser === 'function');
-    set('s-getuid', typeof A.getUid === 'function' ? '✅ يعمل' : '❌', typeof A.getUid === 'function');
-    set('s-token', typeof A.getIdToken === 'function' ? '✅ يعمل' : '❌', typeof A.getIdToken === 'function');
-    set('s-onchange', typeof A.onAuthChange === 'function' ? '✅ يعمل' : '❌', typeof A.onAuthChange === 'function');
-    set('s-signout', typeof A.signOut === 'function' ? '✅ يعمل' : '❌', typeof A.signOut === 'function');
-
-    // translateError
-    try{
-      var t = A.translateError({ code: 'auth/wrong-password' });
-      set('s-translate', t.indexOf('كلمة المرور') !== -1 ? '✅ يعمل' : '⚠️', t.indexOf('كلمة المرور') !== -1);
-      log('translateError: ' + t);
-    }catch(e){ set('s-translate', '❌', false); }
-
-    if(window.QamarResilience){
-      set('s-resretry', typeof window.QamarResilience.retry === 'function' ? '✅ يعمل' : '❌', true);
-    }
-    if(window.QamarCleaners){
-      var st = window.QamarCleaners.getStatus();
-      set('s-clnstatus', '✅ ' + Object.keys(st.jobs || {}).length + ' مهمة', true);
-    }
-
-    // ═══ اختبار waitForAuth ═══
-    log('⏳ Waiting for auth...');
-    A.waitForAuth(5000)
-      .then(function(ok){
-        set('s-authwait', ok ? '✅ جاهز' : '⚠️ timeout', ok ? true : 'warn');
-        log('auth ready: ' + ok);
-        // ═══ سجّل دخول مجهول ═══
-        return A.signInAsGuest();
-      })
-      .then(function(res){
-        var uid = res.user.uid;
-        set('s-anon', '✅ ' + uid.substring(0,8) + '...', true);
-        log('✅ Guest signed in: uid=' + uid);
-        return new Promise(function(resolve){ setTimeout(resolve, 500); });
-      })
-      .then(function(){
-        // ═══ اختبار getters ═══
-        var isLogged = A.isLoggedIn();
-        var isGuest  = A.isGuest();
-        var isEmail  = A.isEmailUser();
-        var uid      = A.getUid();
-
-        set('s-islogged', isLogged ? '✅ yes' : '❌', isLogged);
-        set('s-isguest', isGuest ? '✅ yes' : '❌', isGuest);
-        set('s-isemail', isEmail ? '⚠️ yes' : '✅ no', !isEmail);
-        set('s-getuid', uid ? '✅ ' + uid.substring(0,6) + '...' : '❌', !!uid);
-        log('isLoggedIn=' + isLogged + ', isGuest=' + isGuest + ', uid=' + uid);
-
-        // ═══ getIdToken ═══
-        return A.getIdToken();
-      })
-      .then(function(token){
-        if(token && typeof token === 'string' && token.length > 20){
-          set('s-token', '✅ token (' + token.length + ')', true);
-          log('✅ getIdToken OK (len=' + token.length + ')');
-        } else {
-          set('s-token', '⚠️ no token', 'warn');
-        }
-        // ═══ onAuthChange ═══
-        var called = false;
-        var off = A.onAuthChange(function(payload){
-          called = true;
+    FILES.forEach(function(file){
+      chain = chain.then(function(){
+        return fileExists(file.path).then(function(exists){
+          checked++;
+          if (exists) {
+            return loadScript(file.path).then(function(ok){
+              State.loaded[file.key] = ok;
+              if (ok) {
+                State.loadedCount++;
+                log('✅ ' + file.label);
+              } else {
+                State.missingCount++;
+                log('⚠️ فشل تحميل: ' + file.label);
+              }
+            });
+          } else {
+            State.loaded[file.key] = false;
+            State.missingCount++;
+            log('○ لم يُرفع بعد: ' + file.label);
+          }
         });
-        return new Promise(function(resolve){ setTimeout(resolve, 300); })
-          .then(function(){
-            if(called){
-              set('s-onchange', '✅ يعمل', true);
-              log('✅ onAuthChange triggered');
-            } else {
-              set('s-onchange', '⚠️ لم يُطلَق', 'warn');
-              log('⚠️ onAuthChange not triggered (may need state change)');
-            }
-            off();
-          });
-      })
-      .then(function(){
-        // ═══ اختبار signOut ═══
-        log('🔓 Signing out...');
-        return A.signOut();
-      })
-      .then(function(){
-        set('s-signout', '✅ يعمل', true);
-        log('✅ signOut OK');
-        // ═══ أعد الدخول للاستمرار ═══
-        return A.signInAsGuest();
-      })
-      .then(function(){
-        log('✅ Re-signed in for continued testing');
-      })
-      .catch(function(e){
-        log('❌ Test error: ' + (e.code||'') + ' ' + e.message);
-      })
-      .then(function(){
-        finish();
       });
+    });
+
+    return chain.then(function(){
+      log('═══════════════════');
+      log('📊 النتيجة: ' + State.loadedCount + ' محمّل، ' + State.missingCount + ' مفقود');
+      log('⏱️ الزمن: ' + (Date.now() - State.startTime) + 'ms');
+      return { loaded: State.loadedCount, missing: State.missingCount };
+    });
   }
 
-  function finish(){
-    setTimeout(function(){
-      var finalEl = document.getElementById('final');
-      var allErr = document.querySelectorAll('.val.err').length;
-      var allOk  = document.querySelectorAll('.val.ok').length;
-      var allWarn = document.querySelectorAll('.val.warn').length;
-      var total  = document.querySelectorAll('.val').length;
+  /* ═══════════════════════════════════════════════════════
+      بناء لوحة العرض
+     ═══════════════════════════════════════════════════════ */
+  function renderStatusList(){
+    const list = document.getElementById('status-list');
+    list.style.display = 'block';
 
-      if(allErr === 0){
-        finalEl.className = 'final ok';
-        finalEl.textContent = '✅ كل الأنظمة تعمل — (' + allOk + '/' + total + ')' + (allWarn ? ' + ' + allWarn + ' تحذير' : '');
-        log('═══════════════════');
-        log('🎉 ALL SYSTEMS GREEN');
-        log('═══════════════════');
+    // تجميع حسب المجلد
+    const groups = {};
+    FILES.forEach(function(f){
+      const parts = f.path.split('/');
+      const folder = parts.length > 1 ? parts[0] : 'root';
+      if (!groups[folder]) groups[folder] = [];
+      groups[folder].push(f);
+    });
+
+    let html = '';
+    Object.keys(groups).forEach(function(folder){
+      html += '<div class="section-title">📁 ' + folder + '/</div>';
+      html += '<div class="status-list">';
+      groups[folder].forEach(function(f){
+        const isLoaded = State.loaded[f.key] === true;
+        const cls = isLoaded ? 'ok' : 'skip';
+        const icon = isLoaded ? '✅' : '○';
+        html += '<div class="row">';
+        html += '<span class="name">' + f.label + '</span>';
+        html += '<span class="val ' + cls + '">' + icon + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+
+    list.innerHTML = html;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+      تشغيل اختبارات عامة بعد التحميل
+     ═══════════════════════════════════════════════════════ */
+  function runTests(){
+    const finalEl = document.getElementById('final');
+
+    // فحص المكونات الموجودة
+    const tests = [
+      { name: 'Firebase SDK',        ok: typeof firebase !== 'undefined' },
+      { name: 'QAMAR (constants)',   ok: !!(window.QAMAR && window.QAMAR.ROOMS) },
+      { name: 'escapeHtml (utils)',  ok: typeof window.escapeHtml === 'function' },
+      { name: 'AppState (state)',    ok: !!window.AppState },
+      { name: 'EventBus',            ok: !!window.EventBus },
+      { name: 'QamarFB',             ok: !!window.QamarFB },
+      { name: 'QamarOpt',            ok: !!window.QamarOpt },
+      { name: 'QamarResilience',     ok: !!window.QamarResilience },
+      { name: 'QamarCleaners',       ok: !!window.QamarCleaners },
+      { name: 'QamarAuth',           ok: !!window.QamarAuth },
+      { name: 'QamarSession',        ok: !!window.QamarSession },
+      { name: 'QamarIdentity',       ok: !!window.QamarIdentity },
+      { name: 'QamarRanks',          ok: !!window.QamarRanks },
+      { name: 'QamarBoot',           ok: !!window.QamarBoot }
+    ];
+
+    let okCount = 0, total = 0;
+    tests.forEach(function(t){
+      total++;
+      if (t.ok) {
+        okCount++;
+        log('✅ ' + t.name);
       } else {
-        finalEl.className = 'final err';
-        finalEl.textContent = '⚠️ ' + allErr + ' نظام فشل من ' + total;
+        log('○ ' + t.name + ' — غير موجود');
       }
-    }, 500);
+    });
+
+    // اختبر Firebase connection
+    if (window.QamarFB && window.QamarFB.isReady()) {
+      window.QamarFB.get('.info/connected', 5000).then(function(v){
+        log('🔌 Firebase connected: ' + v);
+      }).catch(function(){});
+    }
+
+    if (okCount === total) {
+      finalEl.className = 'final ok';
+      finalEl.textContent = '✅ كل الأنظمة المتاحة تعمل — (' + okCount + '/' + total + ')';
+      log('═══════════════════');
+      log('🎉 ALL SYSTEMS GREEN');
+      log('═══════════════════');
+    } else if (okCount >= 5) {
+      finalEl.className = 'final warn';
+      finalEl.textContent = '⚠️ ' + okCount + '/' + total + ' نظام يعمل — الباقي قيد البناء';
+      log('⏳ ' + (total - okCount) + ' نظام لم يُرفع بعد');
+    } else {
+      finalEl.className = 'final err';
+      finalEl.textContent = '⚠️ مشكلة — فقط ' + okCount + '/' + total;
+    }
+
+    // تحديث معلومات التحميل
+    const info = document.getElementById('loading-info');
+    info.innerHTML = '✅ تم تحميل ' + State.loadedCount + ' ملف' +
+                    (State.missingCount > 0 ? ' · ⏳ ' + State.missingCount + ' قيد البناء' : '');
   }
 
-  setTimeout(runTests, 3000);
+  /* ═══════════════════════════════════════════════════════
+      ابدأ
+     ═══════════════════════════════════════════════════════ */
+  function start(){
+    loadAllFiles().then(function(){
+      renderStatusList();
+      // انتظر boot.js قليلاً
+      setTimeout(runTests, 2500);
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+
 })();
 </script>
 
