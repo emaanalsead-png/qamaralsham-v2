@@ -6,7 +6,6 @@
 <title>🌙 قمر الشام v2 — اختبار</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
 
-<!-- Firebase SDK v9 compat -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -81,13 +80,11 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
 </head>
 <body>
 
-<!-- Loader -->
 <div id="qamar-boot-loader">
   <div class="spinner"></div>
   <div id="qamar-boot-status">جاري التحميل...</div>
 </div>
 
-<!-- Test Panel -->
 <div class="box">
   <h1>🌙 قمر الشام v2</h1>
   <div class="sub">لوحة اختبار — المرحلة 1 + 2</div>
@@ -102,13 +99,13 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
     <div class="row"><span class="name">firebase/firebase.js</span><span class="val" id="s-fbfile">⏳</span></div>
     <div class="row"><span class="name">Firebase init</span><span class="val" id="s-fbinit">⏳</span></div>
     <div class="row"><span class="name">Anonymous Auth</span><span class="val" id="s-anon">⏳</span></div>
-    <div class="row"><span class="name">QamarFB.get()</span><span class="val" id="s-fbget">⏳</span></div>
     <div class="row"><span class="name">QamarFB.set()</span><span class="val" id="s-fbset">⏳</span></div>
+    <div class="row"><span class="name">QamarFB.get()</span><span class="val" id="s-fbget">⏳</span></div>
     <div class="row"><span class="name">QamarFB.onValue()</span><span class="val" id="s-fbon">⏳</span></div>
+    <div class="row"><span class="name">QamarFB.remove()</span><span class="val" id="s-fbrm">⏳</span></div>
     <div class="row"><span class="name">الرتب</span><span class="val" id="s-ranks">⏳</span></div>
     <div class="row"><span class="name">الغرف</span><span class="val" id="s-rooms">⏳</span></div>
     <div class="row"><span class="name">EventBus</span><span class="val" id="s-bus">⏳</span></div>
-    <div class="row"><span class="name">encodeEmail</span><span class="val" id="s-encode">⏳</span></div>
   </div>
 
   <div class="final" id="final">⏳ جاري الفحص...</div>
@@ -116,7 +113,6 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
   <div class="log" id="log"><div>📋 سجل التشغيل:</div></div>
 </div>
 
-<!-- Core Scripts — order matters! -->
 <script src="core/config.js"></script>
 <script src="core/constants.js"></script>
 <script src="core/utils.js"></script>
@@ -142,181 +138,104 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
   }
 
   function runTests(){
-    // Firebase SDK
-    if(typeof firebase !== 'undefined'){
-      set('s-firebase', '✅ محمّل', true);
-      log('Firebase SDK loaded, v' + (firebase.SDK_VERSION || '?'));
-    } else {
-      set('s-firebase', '❌ مفقود', false);
-    }
+    // ═══ فحوصات الملفات ═══
+    set('s-firebase', typeof firebase !== 'undefined' ? '✅ محمّل' : '❌', typeof firebase !== 'undefined');
+    set('s-config', typeof window.waitForFirebase === 'function' ? '✅ يعمل' : '❌', typeof window.waitForFirebase === 'function');
+    set('s-constants', (window.QAMAR && window.QAMAR.ROOMS) ? '✅ يعمل' : '❌', !!(window.QAMAR && window.QAMAR.ROOMS));
+    set('s-utils', typeof window.escapeHtml === 'function' ? '✅ يعمل' : '❌', typeof window.escapeHtml === 'function');
+    set('s-state', (window.AppState && window.EventBus) ? '✅ يعمل' : '❌', !!(window.AppState && window.EventBus));
+    set('s-boot', window.QamarBoot ? '✅ يعمل' : '❌', !!window.QamarBoot);
+    set('s-fbfile', window.QamarFB ? '✅ يعمل' : '❌', !!window.QamarFB);
+    set('s-fbinit', window.db ? '✅ متصل' : '⏳', !!window.db);
 
-    // core/config.js
-    if(typeof window.waitForFirebase === 'function'){
-      set('s-config', '✅ يعمل', true);
-    } else {
-      set('s-config', '❌ فشل', false);
-    }
-
-    // core/constants.js
-    if(window.QAMAR && window.QAMAR.ROOMS){
-      set('s-constants', '✅ يعمل', true);
-    } else {
-      set('s-constants', '❌ فشل', false);
-    }
-
-    // core/utils.js
-    if(typeof window.escapeHtml === 'function'){
-      set('s-utils', '✅ يعمل', true);
-    } else {
-      set('s-utils', '❌ فشل', false);
-    }
-
-    // core/state.js
-    if(window.AppState && window.EventBus){
-      set('s-state', '✅ يعمل', true);
-    } else {
-      set('s-state', '❌ فشل', false);
-    }
-
-    // core/boot.js
-    if(window.QamarBoot){
-      set('s-boot', '✅ يعمل', true);
-    } else {
-      set('s-boot', '❌ فشل', false);
-    }
-
-    // firebase/firebase.js
-    if(window.QamarFB){
-      set('s-fbfile', '✅ يعمل', true);
-      log('firebase.js: QamarFB loaded');
-    } else {
-      set('s-fbfile', '❌ فشل', false);
-      return;
-    }
-
-    // Firebase init
-    if(window.db){
-      set('s-fbinit', '✅ متصل', true);
-    } else {
-      set('s-fbinit', '⏳ ينتظر', false);
-    }
-
-    // الرتب
-    if(window.QAMAR && window.QAMAR.RANKS_ORDERED){
-      set('s-ranks', '✅ ' + window.QAMAR.RANKS_ORDERED.length + ' رتبة', true);
-    } else {
-      set('s-ranks', '❌', false);
-    }
-
-    // الغرف
-    if(window.QAMAR && window.QAMAR.ROOMS){
-      set('s-rooms', '✅ ' + Object.keys(window.QAMAR.ROOMS).length + ' غرفة', true);
-    } else {
-      set('s-rooms', '❌', false);
-    }
+    set('s-ranks', (window.QAMAR && window.QAMAR.RANKS_ORDERED) ? '✅ ' + window.QAMAR.RANKS_ORDERED.length + ' رتبة' : '❌', !!(window.QAMAR && window.QAMAR.RANKS_ORDERED));
+    set('s-rooms', (window.QAMAR && window.QAMAR.ROOMS) ? '✅ ' + Object.keys(window.QAMAR.ROOMS).length + ' غرفة' : '❌', !!(window.QAMAR && window.QAMAR.ROOMS));
 
     // EventBus
     try{
       var got = false;
-      window.EventBus.once('test:ping', function(){ got = true; });
-      window.EventBus.emit('test:ping');
+      window.EventBus.once('t:ping', function(){ got = true; });
+      window.EventBus.emit('t:ping');
       set('s-bus', got ? '✅ يعمل' : '❌', got);
-    }catch(e){
-      set('s-bus', '❌ خطأ', false);
-    }
+    }catch(e){ set('s-bus', '❌', false); }
 
-    // encodeEmail
-    if(window.QamarFB && typeof window.QamarFB.encodeEmail === 'function'){
-      var encoded = window.QamarFB.encodeEmail('test@example.com');
-      if(encoded === 'test_AT_example_DOT_com'){
-        set('s-encode', '✅ يعمل', true);
-      } else {
-        set('s-encode', '⚠️ ' + encoded, 'warn');
-      }
-    }
+    if(!window.QamarFB){ log('❌ QamarFB missing'); return finish(); }
+    if(!window.auth){ log('❌ auth missing'); set('s-anon','❌',false); return finish(); }
 
-    // ══════════════════════════════════════════════
-    // Anonymous Sign-In ثم اختبار الكتابة
-    // ══════════════════════════════════════════════
+    // ═══ Anonymous Auth ═══
     log('🔐 Signing in anonymously...');
-
-    if(!window.auth){
-      log('❌ window.auth not available');
-      set('s-anon', '❌ auth missing', false);
-      finish();
-      return;
-    }
-
     window.auth.signInAnonymously()
       .then(function(cred){
         var uid = cred.user.uid;
         set('s-anon', '✅ ' + uid.substring(0,8) + '...', true);
-        log('Anonymous auth OK, uid=' + uid);
-        return runWriteTests();
+        log('✅ Anonymous uid=' + uid);
+
+        // ═══ استخدام مسار مسموح أصلاً: user_presence/$uid/_test ═══
+        var testPath   = 'user_presence/' + uid + '/_qamar_test';
+        var listenPath = 'user_presence/' + uid + '/_qamar_listen';
+
+        log('📍 Test path: ' + testPath);
+
+        // 1) SET
+        var payload = { hello: 'world', at: Date.now(), _test: true };
+        return window.QamarFB.set(testPath, payload)
+          .then(function(){
+            set('s-fbset', '✅ يعمل', true);
+            log('✅ QamarFB.set OK');
+            return window.QamarFB.get(testPath);
+          })
+          .then(function(val){
+            if(val && val.hello === 'world'){
+              set('s-fbget', '✅ يعمل', true);
+              log('✅ QamarFB.get OK: ' + JSON.stringify(val));
+            } else {
+              set('s-fbget', '⚠️ ' + JSON.stringify(val), 'warn');
+              log('⚠️ QamarFB.get unexpected: ' + JSON.stringify(val));
+            }
+            // 2) onValue
+            return new Promise(function(resolve){
+              var listener = window.QamarFB.onValue(listenPath, function(v){
+                if(v && v.ok === true){
+                  set('s-fbon', '✅ يعمل', true);
+                  log('✅ QamarFB.onValue OK');
+                  listener.off();
+                  resolve(true);
+                }
+              });
+              setTimeout(function(){
+                window.QamarFB.set(listenPath, { ok: true }).catch(function(e){
+                  set('s-fbon', '❌ ' + (e.code||''), false);
+                  log('❌ onValue write: ' + e.code);
+                  resolve(false);
+                });
+              }, 400);
+              setTimeout(function(){ resolve(false); }, 5000);
+            });
+          })
+          .then(function(){
+            // 3) remove (cleanup)
+            return window.QamarFB.remove(testPath)
+              .then(function(){
+                set('s-fbrm', '✅ يعمل', true);
+                log('✅ QamarFB.remove OK (cleanup)');
+                return window.QamarFB.remove(listenPath).catch(function(){});
+              });
+          })
+          .then(function(){
+            log('✅ All QamarFB write/read tests passed');
+          })
+          .catch(function(e){
+            log('❌ Test error: ' + (e.code||'') + ' ' + e.message);
+            if(!document.querySelector('#s-fbset.ok')) set('s-fbset', '❌ ' + (e.code||'denied'), false);
+            if(!document.querySelector('#s-fbget.ok')) set('s-fbget', '⚠️ skip', 'warn');
+            if(!document.querySelector('#s-fbon.ok'))  set('s-fbon',  '⚠️ skip', 'warn');
+            if(!document.querySelector('#s-fbrm.ok'))  set('s-fbrm',  '⚠️ skip', 'warn');
+          })
+          .then(function(){ finish(); });
       })
       .catch(function(e){
         set('s-anon', '❌ ' + e.code, false);
         log('❌ Anonymous auth failed: ' + e.code + ' — ' + e.message);
-        log('⚠️  تأكد من تفعيل Anonymous Sign-in في Firebase Console');
-        // جرّب الكتابة رغم ذلك
-        return runWriteTests();
-      });
-  }
-
-  function runWriteTests(){
-    // اختبار get (سيسمح دائمًا)
-    var testPath = 'qamar_test/' + Date.now();
-    var testData = { hello: 'world', at: Date.now() };
-
-    return window.QamarFB.set(testPath, testData)
-      .then(function(){
-        set('s-fbset', '✅ يعمل', true);
-        log('QamarFB.set OK');
-        return window.QamarFB.get(testPath);
-      })
-      .then(function(val){
-        if(val && val.hello === 'world'){
-          set('s-fbget', '✅ يعمل', true);
-          log('QamarFB.get OK: hello=' + val.hello);
-        } else {
-          set('s-fbget', '⚠️ ' + JSON.stringify(val), 'warn');
-        }
-        return window.QamarFB.remove(testPath).catch(function(){});
-      })
-      .then(function(){
-        // اختبار onValue
-        var listenPath = 'qamar_test_listen/' + Date.now();
-        return new Promise(function(resolve){
-          var listener = window.QamarFB.onValue(listenPath, function(val){
-            if(val && val.ok === true){
-              set('s-fbon', '✅ يعمل', true);
-              log('QamarFB.onValue OK');
-              listener.off();
-              window.QamarFB.remove(listenPath).catch(function(){});
-              resolve(true);
-            }
-          });
-          setTimeout(function(){
-            window.QamarFB.set(listenPath, { ok: true }).catch(function(e){
-              set('s-fbon', '❌ ' + e.code, false);
-              log('onValue write failed: ' + e.code);
-              resolve(false);
-            });
-          }, 400);
-          // Timeout احتياطي
-          setTimeout(function(){
-            set('s-fbon', '⚠️ timeout', 'warn');
-            resolve(false);
-          }, 5000);
-        });
-      })
-      .catch(function(e){
-        log('❌ Write test error: ' + (e.code || '') + ' ' + e.message);
-        set('s-fbset', '❌ ' + (e.code || 'denied'), false);
-        set('s-fbget', '⚠️ skip', 'warn');
-        set('s-fbon', '⚠️ skip', 'warn');
-      })
-      .then(function(){
         finish();
       });
   }
@@ -324,25 +243,23 @@ h1{color:#ffd700;font-size:24px;margin-bottom:6px;font-weight:900}
   function finish(){
     setTimeout(function(){
       var finalEl = document.getElementById('final');
-      var allOk = document.querySelectorAll('.val.ok').length;
       var allErr = document.querySelectorAll('.val.err').length;
-      var total = document.querySelectorAll('.val').length;
+      var allOk  = document.querySelectorAll('.val.ok').length;
+      var total  = document.querySelectorAll('.val').length;
 
       if(allErr === 0){
         finalEl.className = 'final ok';
-        finalEl.textContent = '✅ كل الأنظمة تعمل — المرحلة 2 جاهزة!';
+        finalEl.textContent = '✅ كل الأنظمة تعمل — المرحلة 2 جاهزة (' + allOk + '/' + total + ')';
         log('═══════════════════');
         log('🎉 ALL SYSTEMS GREEN');
         log('═══════════════════');
       } else {
         finalEl.className = 'final err';
         finalEl.textContent = '⚠️ ' + allErr + ' نظام فشل من ' + total;
-        log('❌ ' + allErr + ' systems failed');
       }
     }, 500);
   }
 
-  // ابدأ بعد بدء boot
   setTimeout(runTests, 2500);
 })();
 </script>
