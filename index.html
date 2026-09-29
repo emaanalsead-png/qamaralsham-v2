@@ -33,9 +33,7 @@
 
 <body>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Boot Loader                            ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Boot Loader ═══ -->
 <div id="qamar-boot-loader" class="qamar-boot-loader">
     <div class="qbl-inner">
         <div class="qbl-moon">🌙</div>
@@ -47,14 +45,10 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Starfield Background                    ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Starfield ═══ -->
 <div id="starfield" class="starfield"></div>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Login Screen                           ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Login Screen ═══ -->
 <div id="login-screen" class="login-screen">
     <div class="ls-card">
         <div class="ls-header">
@@ -70,7 +64,7 @@
         </div>
 
         <div class="ls-panel active" data-ls-panel="guest">
-            <p class="ls-hint">ادخل كزائر — بدون بريد، بدون كلمة مرور. تستطيع الكتابة في الروم العام، لكن لا يمكنك الخاص أو الرفع.</p>
+            <p class="ls-hint">ادخل كزائر — بدون بريد، بدون كلمة مرور.</p>
             <button id="ls-guest-btn" class="ls-btn ls-btn-primary" type="button">
                 <i class="fas fa-door-open"></i> دخول سريع
             </button>
@@ -111,16 +105,11 @@
         </div>
 
         <div id="ls-error" class="ls-error hidden"></div>
-
-        <div class="ls-footer">
-            <span class="ls-version">v2.0.0</span>
-        </div>
+        <div class="ls-footer"><span class="ls-version">v2.0.0</span></div>
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Main App                                ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Main App ═══ -->
 <div id="main-app" class="main-app hidden">
 
     <header id="chat-header" class="chat-header">
@@ -161,25 +150,13 @@
     </div>
 
     <div id="input-area" class="input-area">
-
         <div id="reply-preview" class="reply-preview" style="display:none;"></div>
-
         <div id="char-counter" class="char-counter" style="display:none;">0</div>
-
         <div class="input-row">
             <button id="plus-btn" class="input-action-btn" type="button" aria-label="أدوات">
                 <i class="fas fa-plus"></i>
             </button>
-            <textarea
-                id="message-input"
-                class="message-input"
-                placeholder="اكتب رسالة..."
-                rows="1"
-                maxlength="2000"
-                autocomplete="off"
-                autocorrect="off"
-                spellcheck="false"
-            ></textarea>
+            <textarea id="message-input" class="message-input" placeholder="اكتب رسالة..." rows="1" maxlength="2000" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
             <button id="emoji-btn" class="input-action-btn" type="button" aria-label="إيموجي">
                 <i class="fas fa-smile"></i>
             </button>
@@ -190,7 +167,6 @@
                 <i class="fas fa-paper-plane"></i>
             </button>
         </div>
-
     </div>
 
     <nav id="bottom-nav" class="bottom-nav">
@@ -213,9 +189,7 @@
 
 </div>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Sidebars                                ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Sidebars ═══ -->
 <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 
 <aside id="sidebar-rooms" class="sidebar sidebar-right" data-sidebar="rooms">
@@ -250,9 +224,7 @@
     <div id="settings-list" class="sidebar-body"></div>
 </aside>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ PM Modal                                ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ PM Modal ═══ -->
 <div id="pm-modal" class="pm-modal hidden">
     <div class="pm-head">
         <button id="pm-back" class="header-btn" type="button">
@@ -277,9 +249,7 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Bot Profile Modal                       ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Bot Profile Modal ═══ -->
 <div id="bot-profile-modal" class="modal hidden">
     <div class="modal-card bot-card">
         <button class="modal-close" type="button">✕</button>
@@ -287,9 +257,7 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Upgrade Modal                           ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Upgrade Modal ═══ -->
 <div id="upgrade-modal" class="modal hidden">
     <div class="modal-card upgrade-card">
         <button class="modal-close" type="button">✕</button>
@@ -302,9 +270,7 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Profile Frame Container (fallback)       ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Profile Frame Container ═══ -->
 <div id="profile-frame-container" class="profile-frame-container hidden">
     <div class="pfc-backdrop"></div>
     <div class="pfc-frame">
@@ -313,9 +279,7 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Scripts                                 ═══ -->
-<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Scripts ═══ -->
 
 <!-- ─── Stage 0: CORE ─── -->
 <script defer src="core/config.js"></script>
@@ -381,9 +345,8 @@
 <!-- ─── Stage 9.5: UI FLOW ─── -->
 <script defer src="ui/login-flow.js"></script>
 
-<!-- ─── Stage 9.6: NAVIGATION + PROFILE ─── -->
+<!-- ─── Stage 9.6: NAVIGATION ─── -->
 <script defer src="ui/nav.js"></script>
-<script defer src="ui/profile.js"></script>
 
 <!-- ─── Stage 10: OPTIONAL ─── -->
 <script defer src="room-picker.js" data-optional="true" onerror="void 0"></script>
