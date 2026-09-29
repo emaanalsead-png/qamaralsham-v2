@@ -1,9 +1,16 @@
 // ==============================================
-// pm/pm.js
-// Private messages — WhatsApp-style
+// pm/pm.js v2 — guardian-queue integration + adaptive
 // ==============================================
-// يعتمد على: firebase.js + auth.js + session.js + ranks.js
+// يعتمد على: firebase.js + auth.js + session.js + ranks.js + guardian-queue.js + adaptive.js
 // يعطي: window.QamarPM
+// ==============================================
+// ⭐ v2 (فوق v1):
+//   1. يكتب في guardian_alerts_queue فوراً عند send()
+//   2. لا يمنع الإرسال (ينبّه فقط)
+//   3. Rate limit للتنبيهات (منع spam queue)
+//   4. Typing — يعتمد على QamarAdaptive
+//   5. QamarBoot.whenReady
+//   6. كل السابق محفوظ
 // ==============================================
 
 (function () {
@@ -13,6 +20,8 @@
         console.error('❌ [pm] firebase.js not loaded!');
         return;
     }
+
+    if (window.QamarPM && window.QamarPM.__v2) return;
 
     const LOG_TAG = '[PM]';
     const Logger = {
@@ -30,12 +39,15 @@
         CHATS_ROOT: 'user_private_chats',
         TYPING_ROOT: 'user_private_typing',
         BLOCKS_ROOT: 'user_private_blocks',
-        RATE_MS: 1000,                  // ⚠️ ثانية واحدة
-        TYPING_TIMEOUT_MS: 4000,        // مسح تلقائي
+        RATE_MS: 1000,
+        TYPING_TIMEOUT_MS: 4000,
         MAX_LENGTH: 2000,
         MESSAGES_LIMIT: 50,
         CHATS_LIMIT: 100,
-        PREVIEW_LENGTH: 80
+        PREVIEW_LENGTH: 80,
+        // ⭐ v2: queue push rate limit
+        ALERT_RATE_MS: 30 * 1000,   // لا نُنبّه أكثر من مرة كل 30s لنفس الشخص
+        ALERT_DEDUP_TTL_MS: 5 * 60 * 1000  // تجاهل نفس الكلمة 5 دقائق
     };
 
     /* ══════════════════════════════════════════════ */
@@ -45,7 +57,7 @@
         currentChat: null,
         messages: [],
         chatsList: [],
-        typingUsers: {},            // { uid: timestamp }
+        typingUsers: {},
         unreadCount: 0,
         lastSentAt: 0,
         lastSentText: '',
@@ -55,8 +67,12 @@
         typingListener: null,
         typingUserTimers: {},
         listeners: [],
-        blocks: {},                 // cache
-        _initialized: false
+        blocks: {},
+        _initialized: false,
+        _adaptiveBound: false,
+        // ⭐ v2
+        alertDedup: {},          // { 'uid:word': timestamp }
+        alertRateMap: {}         // { uid: lastPushAt }
     };
 
     /* ══════════════════════════════════════════════ */
@@ -105,16 +121,23 @@
         return false;
     }
 
+    function _getRateMs() {
+        if (window.QamarAdaptive && typeof window.QamarAdaptive.get === 'function') {
+            return window.QamarAdaptive.get('debounceMs') || CONFIG.RATE_MS;
+        }
+        return CONFIG.RATE_MS;
+    }
+
+    function _isTypingEnabled() {
+        if (window.QamarAdaptive && typeof window.QamarAdaptive.isEnabled === 'function') {
+            return window.QamarAdaptive.isEnabled('typingEnabled');
+        }
+        return true;
+    }
+
     function _sanitizeText(text) {
         if (!text) return '';
         return String(text).trim().substring(0, CONFIG.MAX_LENGTH);
-    }
-
-    function _escape(s) {
-        if (window.escapeHtml) return window.escapeHtml(s);
-        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
-        });
     }
 
     function _preview(text, max) {
@@ -130,8 +153,10 @@
         Logger.info('toast:', msg);
     }
 
+    function _now() { return Date.now(); }
+
     /* ══════════════════════════════════════════════ */
-    /* Messages path                                   */
+    /* Paths                                           */
     /* ══════════════════════════════════════════════ */
     function _msgPath(ownerUid, otherUid) {
         return CONFIG.ROOT + '/' + ownerUid + '/' + otherUid;
@@ -147,6 +172,95 @@
 
     function _blockPath(ownerUid, otherUid) {
         return CONFIG.BLOCKS_ROOT + '/' + ownerUid + '/' + otherUid;
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* ⭐ v2: Violation detection                     */
+    /* ══════════════════════════════════════════════ */
+    function _matchWordSimple(text, list) {
+        if (!text || !list || !list.length) return null;
+        const lower = String(text).toLowerCase();
+        for (let i = 0; i < list.length; i++) {
+            const w = list[i];
+            if (!w || w.length < 2) continue;
+            if (lower.indexOf(String(w).toLowerCase()) !== -1) return w;
+        }
+        return null;
+    }
+
+    function _checkViolation(text, toUid, otherName) {
+        // فحص فقط إذا bot-commands محمّل
+        if (!window.QamarBotCommands) return null;
+        const BotsState = window.QamarBots && window.QamarBots.__state;
+        const botState = window.QamarBots ? window.QamarBots.__getState && window.QamarBots.__getState() : null;
+        return null;  // لا شيء هنا — سنستخدم واجهة QamarBotCommands
+    }
+
+    // ⭐ v2: يستخدم واجهة QamarBotCommands للمطابقة الموحّدة
+    function _detectViolation(text) {
+        if (!window.QamarBotCommands || typeof window.QamarBotCommands.testMatch !== 'function') {
+            return null;
+        }
+        try {
+            const m = window.QamarBotCommands.testMatch(text);
+            if (!m) return null;
+            if (m.kick) return { word: m.kick, severity: 'kick' };
+            if (m.bad) return { word: m.bad, severity: 'jail' };
+            return null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // ⭐ v2: يرسل للـ queue مع rate limit + dedup
+    function _pushToQueue(text, toUid, otherName, otherAvatar) {
+        if (!window.QamarGuardianQueue || typeof window.QamarGuardianQueue.push !== 'function') {
+            return;
+        }
+
+        const viol = _detectViolation(text);
+        if (!viol) return;
+
+        const me = _getCurrentUid();
+        if (!me) return;
+
+        // rate limit — لا نُنبّه أكثر من مرة كل 30s لنفس المستخدم
+        const lastPush = State.alertRateMap[me] || 0;
+        if (_now() - lastPush < CONFIG.ALERT_RATE_MS) {
+            Logger.debug('Queue alert rate-limited');
+            return;
+        }
+
+        // dedup — نفس الكلمة خلال 5 دقائق
+        const dedupKey = me + ':' + viol.word;
+        const lastDedup = State.alertDedup[dedupKey] || 0;
+        if (_now() - lastDedup < CONFIG.ALERT_DEDUP_TTL_MS) {
+            Logger.debug('Queue alert deduplicated');
+            return;
+        }
+
+        State.alertRateMap[me] = _now();
+        State.alertDedup[dedupKey] = _now();
+
+        // اجلب avatar المستخدم الحالي
+        const meUser = _getCurrentUser() || {};
+
+        window.QamarGuardianQueue.push({
+            type: 'pm_violation',
+            severity: viol.severity,
+            suspectUid: me,
+            suspectName: meUser.name || '—',
+            suspectAvatar: meUser.avatar || null,
+            victimUid: toUid,
+            victimName: otherName || '—',
+            matchedWord: viol.word,
+            messagePreview: String(text).substring(0, 120),
+            side: 'send'
+        }).then(function () {
+            Logger.info('📤 PM violation → queue |', viol.severity, '|', viol.word.substring(0, 3) + '...');
+        }).catch(function (e) {
+            Logger.warn('queue push failed:', e.message);
+        });
     }
 
     /* ══════════════════════════════════════════════ */
@@ -177,7 +291,6 @@
                 at: window.QamarFB.serverTime()
             }).then(function () {
                 _emit('pm:blocked', { uid: otherUid });
-                Logger.info('🚫 Blocked:', otherUid.substring(0, 8));
                 return { ok: true };
             });
         });
@@ -201,9 +314,10 @@
     /* Rate limit                                      */
     /* ══════════════════════════════════════════════ */
     function _checkRate(text) {
-        const now = Date.now();
-        if (now - State.lastSentAt < CONFIG.RATE_MS) {
-            const rem = Math.ceil((CONFIG.RATE_MS - (now - State.lastSentAt)) / 1000);
+        const now = _now();
+        const rateMs = _getRateMs();
+        if (now - State.lastSentAt < rateMs) {
+            const rem = Math.ceil((rateMs - (now - State.lastSentAt)) / 1000);
             return { ok: false, remaining: rem || 1 };
         }
         if (text === State.lastSentText && (now - State.lastSentAt) < 3000) {
@@ -213,7 +327,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Send message                                    */
+    /* Send                                            */
     /* ══════════════════════════════════════════════ */
     function send(toUid, text, options) {
         options = options || {};
@@ -227,7 +341,6 @@
             const clean = _sanitizeText(text);
             if (!clean && !options.attachment) throw new Error('الرسالة فارغة');
 
-            // rate
             const rate = _checkRate(clean);
             if (!rate.ok) {
                 if (rate.duplicate) throw new Error('لا تكرر نفس الرسالة');
@@ -242,10 +355,14 @@
                     return true;
                 });
             }).then(function () {
+                // ⭐ v2: فحص المخالفة قبل الإرسال (لا يمنع الإرسال)
+                if (clean) {
+                    _pushToQueue(clean, toUid, options.otherName, options.otherAvatar);
+                }
+
                 const now = window.QamarFB.serverTime();
                 const myUser = _getCurrentUser() || {};
 
-                // payload للأرسل
                 const payloadFromMe = {
                     fromUid: me,
                     toUid: toUid,
@@ -259,13 +376,11 @@
                     edited: false
                 };
 
-                // payload للمستقبل (يُعاد استخدام نفس البنية + إضافة fromName/fromAvatar)
                 const payloadToThem = Object.assign({}, payloadFromMe, {
                     fromName: myUser.name || '—',
                     fromAvatar: myUser.avatar || null
                 });
 
-                // أنشئ push في مساري (نفس msgId للطرفين)
                 const newRef = window.QamarFB.ref(_msgPath(me, toUid)).push();
                 const msgId = newRef.key;
 
@@ -273,7 +388,6 @@
                 updates[_msgPath(me, toUid) + '/' + msgId] = payloadFromMe;
                 updates[_msgPath(toUid, me) + '/' + msgId] = payloadToThem;
 
-                // chat indices
                 updates[_chatPath(me, toUid)] = {
                     otherUid: toUid,
                     otherName: options.otherName || '—',
@@ -283,7 +397,7 @@
                     lastFromMe: true,
                     unread: 0
                 };
-                // للمستقبل — unread يزداد
+
                 return window.QamarFB.get(_chatPath(toUid, me)).then(function (existing) {
                     const prevUnread = (existing && Number(existing.unread)) || 0;
                     updates[_chatPath(toUid, me)] = {
@@ -298,13 +412,11 @@
                     return window.QamarFB.multiUpdate(updates);
                 });
             }).then(function () {
-                State.lastSentAt = Date.now();
+                State.lastSentAt = _now();
                 State.lastSentText = clean;
-                // أوقف "جاري الكتابة"
                 _setTyping(false, toUid);
 
                 _emit('pm:sent', { toUid: toUid });
-                Logger.debug('📤 PM sent to', toUid.substring(0, 8));
                 return { ok: true };
             });
         });
@@ -328,7 +440,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Read — messages                                 */
+    /* Read                                            */
     /* ══════════════════════════════════════════════ */
     function getMessages(otherUid, limit) {
         const me = _getCurrentUid();
@@ -347,9 +459,6 @@
         }).catch(function () { return []; });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Read — chats list                               */
-    /* ══════════════════════════════════════════════ */
     function listChats() {
         const me = _getCurrentUid();
         if (!me) return Promise.resolve([]);
@@ -359,9 +468,7 @@
                 const list = Object.keys(data).map(function (otherUid) {
                     return Object.assign({ otherUid: otherUid }, data[otherUid]);
                 });
-                // احذف المحذوفة
                 let filtered = list.filter(function (c) { return !c.deletedAt; });
-                // رتب حسب آخر رسالة
                 filtered.sort(function (a, b) {
                     return (b.lastTime || 0) - (a.lastTime || 0);
                 });
@@ -408,7 +515,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Mark as read + delivered                        */
+    /* Mark as read                                    */
     /* ══════════════════════════════════════════════ */
     function markAsRead(otherUid) {
         return Promise.resolve().then(function () {
@@ -417,11 +524,8 @@
 
             const now = window.QamarFB.serverTime();
             const updates = {};
-
-            // صفّر unread في chat
             updates[_chatPath(me, otherUid) + '/unread'] = 0;
 
-            // علّم رسائل الطرف الآخر مقروءة (في نسختي)
             return window.QamarFB.get(_msgPath(me, otherUid)).then(function (data) {
                 if (data) {
                     Object.keys(data).forEach(function (msgId) {
@@ -429,7 +533,6 @@
                         if (m && m.fromUid === otherUid && !m.read) {
                             updates[_msgPath(me, otherUid) + '/' + msgId + '/read'] = true;
                             updates[_msgPath(me, otherUid) + '/' + msgId + '/readAt'] = now;
-                            // علّم نسخة الطرف الآخر أيضاً
                             updates[_msgPath(otherUid, me) + '/' + msgId + '/read'] = true;
                             updates[_msgPath(otherUid, me) + '/' + msgId + '/readAt'] = now;
                         }
@@ -461,7 +564,6 @@
                     if (m && m.fromUid === otherUid && !m.delivered) {
                         updates[_msgPath(me, otherUid) + '/' + msgId + '/delivered'] = true;
                         updates[_msgPath(me, otherUid) + '/' + msgId + '/deliveredAt'] = now;
-                        // نسخة الطرف الآخر
                         updates[_msgPath(otherUid, me) + '/' + msgId + '/delivered'] = true;
                         updates[_msgPath(otherUid, me) + '/' + msgId + '/deliveredAt'] = now;
                     }
@@ -476,11 +578,15 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Typing indicator                                */
+    /* ⭐ v2: Typing — adaptive                       */
     /* ══════════════════════════════════════════════ */
     function _setTyping(isTyping, toUid) {
         const me = _getCurrentUid();
         if (!me || !toUid) return;
+
+        // ⭐ v2: تعطيل على النت البطيء
+        if (isTyping && !_isTypingEnabled()) return;
+
         const path = _typingPath(me, toUid);
 
         if (isTyping) {
@@ -490,7 +596,6 @@
         }
     }
 
-    // للاستخدام من UI — أثناء الكتابة
     function setTyping(otherUid, isTyping) {
         if (State.typingTimer) {
             clearTimeout(State.typingTimer);
@@ -498,7 +603,6 @@
         }
         _setTyping(isTyping, otherUid);
         if (isTyping) {
-            // أرسل ping مرة أخرى قبل ما ينتهي
             State.typingTimer = setTimeout(function () {
                 State.typingTimer = null;
             }, CONFIG.TYPING_TIMEOUT_MS - 500);
@@ -513,15 +617,17 @@
         _setTyping(false, otherUid);
     }
 
-    // ابدأ الاستماع لـ typing من الطرف الآخر
     function _startTypingWatch(otherUid) {
         _stopTypingWatch();
         const me = _getCurrentUid();
         if (!me || !otherUid) return;
 
+        // ⭐ v2: لا نستمع على النت البطيء
+        if (!_isTypingEnabled()) return;
+
         const path = _typingPath(otherUid, me);
         State.typingListener = window.QamarFB.onValue(path, function (val) {
-            const now = Date.now();
+            const now = _now();
             if (val) {
                 State.typingUsers[otherUid] = now;
                 if (State.typingUserTimers[otherUid]) clearTimeout(State.typingUserTimers[otherUid]);
@@ -554,7 +660,7 @@
         if (!uid) return false;
         const t = State.typingUsers[uid];
         if (!t) return false;
-        return (Date.now() - t) < CONFIG.TYPING_TIMEOUT_MS;
+        return (_now() - t) < CONFIG.TYPING_TIMEOUT_MS;
     }
 
     /* ══════════════════════════════════════════════ */
@@ -566,13 +672,11 @@
             if (!me || !otherUid || !msgId) throw new Error('بيانات ناقصة');
 
             const path = _msgPath(me, otherUid) + '/' + msgId;
-            const updates = {};
-            updates[path + '/deleted'] = true;
-            updates[path + '/deletedAt'] = window.QamarFB.serverTime();
-            updates[path + '/originalText'] = null; // سيُقرأ قبل
-            // احفظ النص الأصلي
             return window.QamarFB.get(path).then(function (m) {
-                if (m) updates[path + '/originalText'] = m.text || '';
+                const updates = {};
+                updates[path + '/deleted'] = true;
+                updates[path + '/deletedAt'] = window.QamarFB.serverTime();
+                updates[path + '/originalText'] = m ? (m.text || '') : '';
                 updates[path + '/text'] = '';
                 updates[path + '/attachment'] = null;
                 return window.QamarFB.multiUpdate(updates);
@@ -595,7 +699,6 @@
 
             return window.QamarFB.multiUpdate(updates).then(function () {
                 _emit('pm:chatDeleted', { otherUid: otherUid });
-                Logger.info('🗑️ Chat deleted (my side):', otherUid.substring(0, 8));
                 return { ok: true };
             });
         });
@@ -624,7 +727,6 @@
         const me = _getCurrentUid();
         if (!me) return;
 
-        // رسائل
         const msgPath = _msgPath(me, otherUid);
         State.msgListener = window.QamarFB.onLatest(msgPath, CONFIG.MESSAGES_LIMIT, function (arr) {
             const list = arr.map(function (r) {
@@ -634,10 +736,7 @@
             _emit('pm:messages', { otherUid: otherUid, messages: list });
         }, function () {});
 
-        // typing
         _startTypingWatch(otherUid);
-
-        // علّم كل الرسائل delivered
         markAllDelivered(otherUid).catch(function () {});
     }
 
@@ -677,13 +776,35 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* External: read status for display               */
+    /* Status helper                                   */
     /* ══════════════════════════════════════════════ */
     function getMessageStatus(msg) {
         if (!msg) return null;
-        if (msg.read) return 'read';           // ✓✓
-        if (msg.delivered) return 'delivered'; // ✓✓
-        return 'sent';                          // ✓
+        if (msg.read) return 'read';
+        if (msg.delivered) return 'delivered';
+        return 'sent';
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* ⭐ v2: Adaptive bind                            */
+    /* ══════════════════════════════════════════════ */
+    function _bindAdaptive() {
+        if (State._adaptiveBound) return;
+        if (!window.QamarAdaptive || typeof window.QamarAdaptive.onFeatureChange !== 'function') {
+            setTimeout(_bindAdaptive, 1000);
+            return;
+        }
+        State._adaptiveBound = true;
+
+        window.QamarAdaptive.onFeatureChange('typingEnabled', function (payload) {
+            if (payload.value === false) {
+                Logger.info('⏸️ Typing disabled (net slow)');
+                _stopTypingWatch();
+            } else if (State.currentChat) {
+                Logger.info('▶️ Typing enabled — restarting watch');
+                _startTypingWatch(State.currentChat);
+            }
+        });
     }
 
     /* ══════════════════════════════════════════════ */
@@ -693,6 +814,8 @@
         if (State._initialized) return;
         State._initialized = true;
 
+        _bindAdaptive();
+
         if (window.QamarAuth && window.QamarAuth.onAuthChange) {
             window.QamarAuth.onAuthChange(function (p) {
                 if (!p.isLoggedIn) {
@@ -700,8 +823,9 @@
                     _unwatchChats();
                     State.chatsList = [];
                     State.unreadCount = 0;
+                    State.alertDedup = {};
+                    State.alertRateMap = {};
                 } else if (p.uid) {
-                    // راقب القائمة + العدّاد
                     watchChats(function () {
                         getUnreadCount().then(function (n) {
                             _emit('pm:unread', { count: n });
@@ -711,12 +835,16 @@
             });
         }
 
-        Logger.info('📦 [pm.js] initialized');
+        Logger.info('📦 [pm.js v2] initialized');
     }
 
-    if (window.EventBus) {
+    if (window.QamarBoot && typeof window.QamarBoot.whenReady === 'function') {
+        window.QamarBoot.whenReady('background', function () {
+            setTimeout(_init, 800);
+        });
+    } else if (window.EventBus) {
         window.EventBus.once('boot:ready', function () {
-            setTimeout(_init, 2000);
+            setTimeout(_init, 1200);
         });
     } else {
         setTimeout(_init, 6500);
@@ -734,7 +862,10 @@
             unreadCount: State.unreadCount,
             typingUsers: Object.keys(State.typingUsers),
             isGuest: _isGuest(),
-            rateMs: CONFIG.RATE_MS
+            rateMs: _getRateMs(),
+            typingEnabled: _isTypingEnabled(),
+            queueAvailable: !!window.QamarGuardianQueue,
+            alertDedupCount: Object.keys(State.alertDedup).length
         };
     }
 
@@ -742,52 +873,44 @@
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarPM = {
+        __v2: true,
         CONFIG: CONFIG,
 
-        // Send
         send: send,
         sendWithAttachment: sendWithAttachment,
         sendReply: sendReply,
 
-        // Read
         getMessages: getMessages,
         listChats: listChats,
         getChat: getChat,
         getUnreadCount: getUnreadCount,
         getUnreadFrom: getUnreadFrom,
 
-        // Status
         markAsRead: markAsRead,
         markAllDelivered: markAllDelivered,
         getMessageStatus: getMessageStatus,
 
-        // Delete
         deleteMessage: deleteMessage,
         deleteChat: deleteChat,
         restoreChat: restoreChat,
 
-        // Block
         blockUser: blockUser,
         unblockUser: unblockUser,
         isBlocked: isBlocked,
         isBlockedBy: isBlockedBy,
 
-        // Listen
         start: start,
         stop: stop,
         watchChats: watchChats,
 
-        // Typing
         setTyping: setTyping,
         stopTyping: stopTyping,
         isUserTyping: isUserTyping,
 
-        // Events
         onPMEvent: onPMEvent,
 
-        // Debug
         getStatus: getStatus
     };
 
-    Logger.info('📦 [pm.js] loaded | rate:', CONFIG.RATE_MS + 'ms');
+    Logger.info('📦 [pm.js v2] loaded — queue + adaptive');
 })();
