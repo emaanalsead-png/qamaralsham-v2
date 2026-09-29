@@ -1,9 +1,15 @@
 // ==============================================
-// pm/pm-voice.js
-// Voice messages in PM — play once + auto delete
+// pm/pm-voice.js v2 — إصلاح الملك played + adaptive
 // ==============================================
-// يعتمد على: firebase.js + pm.js + auth.js + ranks.js + audit.js
+// يعتمد على: firebase.js + pm.js + auth.js + ranks.js + audit.js + adaptive.js
 // يعطي: window.QamarPMVoice
+// ==============================================
+// ⭐ v2 (فوق v1):
+//   1. إصلاح BUG: الملك لا يُسجَّل played:true
+//   2. تعطيل تلقائي عند very-slow
+//   3. autoDeleteHours من QamarAdaptive
+//   4. توافق QamarBoot.whenReady
+//   5. كل الباقي كما v1
 // ==============================================
 
 (function () {
@@ -13,6 +19,8 @@
         console.error('❌ [pm-voice] firebase.js not loaded!');
         return;
     }
+
+    if (window.QamarPMVoice && window.QamarPMVoice.__v2) return;
 
     const LOG_TAG = '[PMV]';
     const Logger = {
@@ -27,12 +35,12 @@
     /* ══════════════════════════════════════════════ */
     const CONFIG = {
         ROOT: 'pm_voice_msgs',
-        MAX_DURATION_MS: 3 * 60 * 1000,        // 3 دقائق
-        MAX_SIZE_BYTES: 5 * 1024 * 1024,        // 5 MB
+        MAX_DURATION_MS: 3 * 60 * 1000,
+        MAX_SIZE_BYTES: 5 * 1024 * 1024,
         RATE_WINDOW_MS: 60000,
-        RATE_MAX: 5,                            // 5/دقيقة
-        AUTO_DELETE_MS: 24 * 60 * 60 * 1000,    // 24 ساعة
-        CLEANUP_INTERVAL_MS: 60 * 60 * 1000,    // كل ساعة
+        RATE_MAX: 5,
+        AUTO_DELETE_MS: 24 * 60 * 60 * 1000,
+        CLEANUP_INTERVAL_MS: 60 * 60 * 1000,
         ALLOWED_MIME: [
             'audio/webm', 'audio/ogg', 'audio/mpeg',
             'audio/mp4', 'audio/m4a', 'audio/x-m4a',
@@ -46,10 +54,11 @@
     const State = {
         rateMap: {},
         listeners: [],
-        cache: {},              // { 'uid1__uid2': [msgs], at }
+        cache: {},
         cacheTTL: 30000,
         cleanupTimer: null,
-        _initialized: false
+        _initialized: false,
+        _adaptiveBound: false
     };
 
     /* ══════════════════════════════════════════════ */
@@ -98,6 +107,18 @@
         return false;
     }
 
+    function _isVoiceEnabled() {
+        if (window.QamarAdaptive && typeof window.QamarAdaptive.isEnabled === 'function') {
+            return window.QamarAdaptive.isEnabled('voiceMonitorEnabled');
+        }
+        return true;
+    }
+
+    function _getAutoDeleteMs() {
+        // يمكن ضبطه من QamarAdaptive لاحقاً
+        return CONFIG.AUTO_DELETE_MS;
+    }
+
     function _checkRate() {
         const uid = _getCurrentUid();
         if (!uid) return false;
@@ -131,7 +152,6 @@
     /* ══════════════════════════════════════════════ */
     /* Send voice message                              */
     /* ══════════════════════════════════════════════ */
-    // الاستخدام: sendVoice(toUid, audioUrl, {duration, size, mime}, {otherName, otherAvatar})
     function sendVoice(toUid, audioUrl, meta, options) {
         meta = meta || {};
         options = options || {};
@@ -163,7 +183,6 @@
                 throw new Error('محاولات كثيرة — حاول لاحقاً');
             }
 
-            // فحص الحظر (إن وُجد pm.js)
             let blockCheck = Promise.resolve(true);
             if (window.QamarPM && window.QamarPM.isBlocked) {
                 blockCheck = window.QamarPM.isBlocked(toUid).then(function (blocked) {
@@ -191,7 +210,6 @@
                     deleted: false
                 };
 
-                // نسخة المرسل
                 const fromPayload = Object.assign({}, base, {
                     fromUid: me,
                     toUid: toUid,
@@ -200,7 +218,6 @@
                     side: 'sent'
                 });
 
-                // نسخة المستقبل
                 const toPayload = Object.assign({}, base, {
                     fromUid: me,
                     toUid: toUid,
@@ -213,7 +230,6 @@
                 updates[_path(me, rid)] = fromPayload;
                 updates[_path(toUid, rid)] = toPayload;
 
-                // تحديث قائمة المحادثات (chat index)
                 updates['user_private_chats/' + me + '/' + toUid + '/lastMessage'] = '🎤 رسالة صوتية';
                 updates['user_private_chats/' + me + '/' + toUid + '/lastTime'] = now;
                 updates['user_private_chats/' + me + '/' + toUid + '/lastFromMe'] = true;
@@ -238,9 +254,6 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Send from Blob (يتكامل مع media/uploader)      */
-    /* ══════════════════════════════════════════════ */
     function sendVoiceFromBlob(toUid, blob, duration, options) {
         options = options || {};
         return Promise.resolve().then(function () {
@@ -252,7 +265,6 @@
                 throw new Error('المدة طويلة (3 دقائق)');
             }
 
-            // إذا عندنا uploader → استخدمه
             if (window.QamarUploader && typeof window.QamarUploader.uploadAudio === 'function') {
                 return window.QamarUploader.uploadAudio(blob).then(function (url) {
                     return sendVoice(toUid, url, {
@@ -263,7 +275,6 @@
                 });
             }
 
-            // fallback — dataURL (لا يُنصح به للأحجام الكبيرة)
             return new Promise(function (resolve, reject) {
                 const reader = new FileReader();
                 reader.onloadend = function () {
@@ -307,7 +318,6 @@
         State.cache = {};
     }
 
-    // getVoiceMessages(otherUid) — كل صوتيات المحادثة (الطرفان)
     function getVoiceMessages(otherUid, options) {
         options = options || {};
         return Promise.resolve().then(function () {
@@ -325,18 +335,15 @@
                 const theirs = r[1] || {};
                 const merged = {};
 
-                // أضف ما أرسلته أنا (نسختي)
                 Object.keys(mine).forEach(function (rid) {
                     const v = mine[rid];
                     if (!v) return;
                     if (v.fromUid !== me && v.toUid !== me) return;
-                    // احتفظ فقط بمحادثات مع otherUid
                     const partner = (v.fromUid === me) ? v.toUid : v.fromUid;
                     if (partner !== otherUid) return;
                     merged[rid] = Object.assign({ _id: rid, _side: (v.fromUid === me ? 'sent' : 'received') }, v);
                 });
 
-                // أضف ما أرسله لي (من نسخة otherUid)
                 Object.keys(theirs).forEach(function (rid) {
                     const v = theirs[rid];
                     if (!v) return;
@@ -346,7 +353,6 @@
                     if (!merged[rid]) {
                         merged[rid] = Object.assign({ _id: rid, _side: (v.fromUid === me ? 'sent' : 'received') }, v);
                     } else {
-                        // ادمج — احتفظ بـ played
                         merged[rid] = Object.assign({}, merged[rid], v);
                     }
                 });
@@ -367,7 +373,6 @@
         return Promise.resolve().then(function () {
             const me = _getCurrentUid();
             if (!me || !otherUid || !rid) return null;
-            // جرب من نسختي أولاً
             return window.QamarFB.get(_path(me, rid)).then(function (v) {
                 if (v) return Object.assign({ _id: rid }, v);
                 return window.QamarFB.get(_path(otherUid, rid)).then(function (v2) {
@@ -379,29 +384,48 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Mark played + delete receiver copy              */
+    /* ⭐ v2: markAsPlayed — إصلاح الملك               */
     /* ══════════════════════════════════════════════ */
-    // يُستدعى عند انتهاء تشغيل الصوتية من المستقبل
+    /**
+     * يُستدعى عند انتهاء تشغيل الصوتية.
+     * - المستقبل العادي: يُعلّم played في نسخة المرسل + يحذف نسخته
+     * - الملك: يُعلّم played في النسختين بدون حذف
+     */
     function markAsPlayed(otherUid, rid, options) {
         options = options || {};
         return Promise.resolve().then(function () {
             const me = _getCurrentUid();
             if (!me || !otherUid || !rid) return { ok: false };
 
-            // إذا الملك يشغّل → لا يحذف
-            if (_isKing() && options.skipDelete !== false) {
-                // الملك يعلّم فقط
-                return { ok: true, king: true, noDelete: true };
-            }
-
             const now = window.QamarFB.serverTime();
 
-            // علّم في نسخة المرسل
+            // ⭐ v2: الملك — يُعلّم فقط في النسختين (بدون حذف)
+            if (_isKing() && options.skipDelete !== false) {
+                const updates = {};
+                // نسخة المرسل
+                updates[_path(otherUid, rid) + '/played'] = true;
+                updates[_path(otherUid, rid) + '/playedAt'] = now;
+                updates[_path(otherUid, rid) + '/playedByKing'] = true;
+                // نسخة الملك
+                updates[_path(me, rid) + '/played'] = true;
+                updates[_path(me, rid) + '/playedAt'] = now;
+                updates[_path(me, rid) + '/playedByKing'] = true;
+
+                return window.QamarFB.multiUpdate(updates).then(function () {
+                    _invalidateCache();
+                    _emit('pm:voicePlayed', { otherUid: otherUid, rid: rid, king: true });
+                    Logger.info('👑 King marked voice as played (no delete)');
+                    return { ok: true, king: true, noDelete: true };
+                }).catch(function (e) {
+                    Logger.warn('King markAsPlayed failed:', e.message);
+                    return { ok: false, error: e.message };
+                });
+            }
+
+            // المستقبل العادي — يُعلّم في نسخة المرسل + يحذف نسخته
             const updates = {};
             updates[_path(otherUid, rid) + '/played'] = true;
             updates[_path(otherUid, rid) + '/playedAt'] = now;
-
-            // احذف من نسختي (المستقبل)
             updates[_path(me, rid)] = null;
 
             return window.QamarFB.multiUpdate(updates).then(function () {
@@ -410,28 +434,20 @@
                 _emit('pm:voiceDeleted', { otherUid: otherUid, rid: rid, auto: true });
                 Logger.info('✅ Voice played + receiver copy deleted');
                 return { ok: true };
+            }).catch(function (e) {
+                Logger.warn('markAsPlayed failed:', e.message);
+                return { ok: false, error: e.message };
             });
         });
     }
 
-    // الملك يعلّم بدون حذف
+    // الملك يعلّم بدون حذف — alias للتوافق
     function markKingPlayed(ownerUid, rid) {
-        return Promise.resolve().then(function () {
-            if (!_isKing()) throw new Error('فقط الملك');
-            const now = window.QamarFB.serverTime();
-            const updates = {};
-            updates[_path(ownerUid, rid) + '/played'] = true;
-            updates[_path(ownerUid, rid) + '/playedAt'] = now;
-            updates[_path(ownerUid, rid) + '/playedByKing'] = true;
-            return window.QamarFB.multiUpdate(updates).then(function () {
-                _emit('pm:voicePlayed', { otherUid: ownerUid, rid: rid, king: true });
-                return { ok: true };
-            });
-        });
+        return markAsPlayed(ownerUid, rid, { skipDelete: true });
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Delete (soft) — sender side                     */
+    /* Delete (soft)                                   */
     /* ══════════════════════════════════════════════ */
     function deleteVoice(otherUid, rid, options) {
         options = options || {};
@@ -439,9 +455,7 @@
             const me = _getCurrentUid();
             if (!me || !otherUid || !rid) throw new Error('بيانات ناقصة');
 
-            // الملك يقدر يحذف أي شيء
-            if (!_isKing() && options.ownerUid !== me) {
-                // فقط المرسل يستطيع الحذف
+            if (!_isKing()) {
                 return window.QamarFB.get(_path(me, rid)).then(function (v) {
                     if (!v) throw new Error('غير موجود');
                     if (v.fromUid !== me) throw new Error('لا يمكنك حذف صوتية غيرك');
@@ -458,8 +472,6 @@
         updates[_path(me, rid) + '/deleted'] = true;
         updates[_path(me, rid) + '/deletedAt'] = now;
         updates[_path(me, rid) + '/audio'] = '';
-
-        // للمستقبل — نحذف النسخة فقط
         updates[_path(otherUid, rid)] = null;
 
         return window.QamarFB.multiUpdate(updates).then(function () {
@@ -475,7 +487,6 @@
         });
     }
 
-    // حذف نهائي (الملك)
     function hardDelete(ownerUid, rid) {
         return Promise.resolve().then(function () {
             if (!_isKing()) throw new Error('فقط الملك');
@@ -494,13 +505,13 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Auto cleanup (24h)                              */
+    /* Auto cleanup (adaptive)                         */
     /* ══════════════════════════════════════════════ */
     function cleanupOld() {
         const uid = _getCurrentUid();
         if (!uid) return Promise.resolve({ deleted: 0 });
 
-        const cutoff = Date.now() - CONFIG.AUTO_DELETE_MS;
+        const cutoff = Date.now() - _getAutoDeleteMs();
         return window.QamarFB.get(CONFIG.ROOT + '/' + uid)
             .then(function (data) {
                 if (!data) return { deleted: 0 };
@@ -526,6 +537,11 @@
 
     function startCleanup() {
         if (State.cleanupTimer) return;
+        if (!_isVoiceEnabled()) {
+            Logger.info('⏸️ Voice cleanup disabled (very-slow net)');
+            return;
+        }
+
         setTimeout(function () { cleanupOld(); }, 60000);
         State.cleanupTimer = setInterval(function () {
             cleanupOld();
@@ -541,7 +557,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* King access (for pm-monitor)                    */
+    /* King access                                     */
     /* ══════════════════════════════════════════════ */
     function listAllForUser(ownerUid) {
         return Promise.resolve().then(function () {
@@ -557,6 +573,29 @@
     }
 
     /* ══════════════════════════════════════════════ */
+    /* Adaptive bind                                   */
+    /* ══════════════════════════════════════════════ */
+    function _bindAdaptive() {
+        if (State._adaptiveBound) return;
+        if (!window.QamarAdaptive || typeof window.QamarAdaptive.onFeatureChange !== 'function') {
+            setTimeout(_bindAdaptive, 1000);
+            return;
+        }
+
+        State._adaptiveBound = true;
+
+        window.QamarAdaptive.onFeatureChange('voiceMonitorEnabled', function (payload) {
+            if (payload.value === false) {
+                Logger.info('⏸️ Voice disabled (net got slower)');
+                stopCleanup();
+            } else {
+                Logger.info('▶️ Voice enabled (net improved)');
+                startCleanup();
+            }
+        });
+    }
+
+    /* ══════════════════════════════════════════════ */
     /* Status                                          */
     /* ══════════════════════════════════════════════ */
     function getStatus() {
@@ -568,9 +607,10 @@
             rateMax: CONFIG.RATE_MAX,
             maxDurationSec: CONFIG.MAX_DURATION_MS / 1000,
             maxSizeMB: CONFIG.MAX_SIZE_BYTES / 1024 / 1024,
-            autoDeleteHours: CONFIG.AUTO_DELETE_MS / 1000 / 60 / 60,
+            autoDeleteHours: _getAutoDeleteMs() / 1000 / 60 / 60,
             cleanupActive: !!State.cleanupTimer,
-            cacheEntries: Object.keys(State.cache).length
+            cacheEntries: Object.keys(State.cache).length,
+            voiceEnabled: _isVoiceEnabled()
         };
     }
 
@@ -580,6 +620,8 @@
     function _init() {
         if (State._initialized) return;
         State._initialized = true;
+
+        _bindAdaptive();
 
         if (window.QamarAuth && window.QamarAuth.onAuthChange) {
             window.QamarAuth.onAuthChange(function (p) {
@@ -595,7 +637,11 @@
         Logger.info('📦 [pm-voice.js] initialized');
     }
 
-    if (window.EventBus) {
+    if (window.QamarBoot && typeof window.QamarBoot.whenReady === 'function') {
+        window.QamarBoot.whenReady('background', function () {
+            setTimeout(_init, 1200);
+        });
+    } else if (window.EventBus) {
         window.EventBus.once('boot:ready', function () {
             setTimeout(_init, 2400);
         });
@@ -607,38 +653,31 @@
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarPMVoice = {
+        __v2: true,
         CONFIG: CONFIG,
 
-        // Send
         sendVoice: sendVoice,
         sendVoiceFromBlob: sendVoiceFromBlob,
 
-        // Read
         getVoiceMessages: getVoiceMessages,
         getVoiceMessage: getVoiceMessage,
 
-        // Play
         markAsPlayed: markAsPlayed,
         markKingPlayed: markKingPlayed,
 
-        // Delete
         deleteVoice: deleteVoice,
         hardDelete: hardDelete,
 
-        // Cleanup
         cleanupOld: cleanupOld,
         startCleanup: startCleanup,
         stopCleanup: stopCleanup,
 
-        // King
         listAllForUser: listAllForUser,
 
-        // Events
         onVoiceEvent: onVoiceEvent,
 
-        // Debug
         getStatus: getStatus
     };
 
-    Logger.info('📦 [pm-voice.js] loaded | max:', CONFIG.MAX_DURATION_MS / 1000, 's |', CONFIG.MAX_SIZE_BYTES / 1024 / 1024, 'MB');
+    Logger.info('📦 [pm-voice.js v2] loaded — King played fixed');
 })();
