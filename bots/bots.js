@@ -5,7 +5,7 @@
 // يعتمد على: firebase.js + constants.js + state.js + auth.js + ranks.js
 // يعطي: window.QamarBots
 // ==============================================
-// ✅ v2.1: إصلاح حرج — استقبال chat:messages (من chat.js)
+// ✅ v2.2: انتظار auth قبل القراءة (لا permission_denied)
 // ==============================================
 
 (function () {
@@ -80,7 +80,7 @@
         configs: {},
         lastSentAt: {},
         lastSentText: {},
-        lastProcessedMsgId: null,        // ⭐ v2.1: لمنع تكرار آخر رسالة
+        lastProcessedMsgId: null,
         instanceId: 'bot_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8),
         initialized: false,
         listeners: []
@@ -145,6 +145,15 @@
     /* ══════════════════════════════════════════════ */
     function initBots() {
         if (State.initialized) return Promise.resolve(true);
+
+        // ⭐ لا تقرأ إذا لا يوجد مستخدم
+        if (!window.auth || !window.auth.currentUser) {
+            _applyConfigs({});
+            State.initialized = true;
+            Logger.info('✅ Bots initialized (defaults, no user)');
+            return Promise.resolve(true);
+        }
+
         return window.QamarFB.get(CONFIG.CONFIG_ROOT).then(function (data) {
             _applyConfigs(data || {});
             State.initialized = true;
@@ -426,19 +435,16 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ⭐ v2.1: EventBus hooks — يقبل الاسمين          */
+    /* EventBus hooks — يقبل الاسمين                  */
     /* ══════════════════════════════════════════════ */
     function _handleBusMessage(payload) {
-        // صيغة 1: { message, roomId }  ← من chat:message (المستقبلي)
         if (payload && payload.message) {
             routeMessage(payload.message, payload.roomId).catch(function () {});
             return;
         }
-        // صيغة 2: { roomId, messages: [...] }  ← من chat:messages (الفعلي)
         if (payload && Array.isArray(payload.messages) && payload.messages.length > 0) {
             const last = payload.messages[payload.messages.length - 1];
             if (!last) return;
-            // dedup: لا نعالج نفس الرسالة مرتين
             const key = (last._id || '') + '|' + (last.time || 0);
             if (State.lastProcessedMsgId === key) return;
             State.lastProcessedMsgId = key;
@@ -540,10 +546,31 @@
     /* ══════════════════════════════════════════════ */
     /* Boot                                            */
     /* ══════════════════════════════════════════════ */
+    // ⭐ FIXED: انتظر auth ثم اقرأ (لا permission_denied)
     function _boot() {
-        initBots().then(function () {
+        const waitAuth = function () {
+            if (window.QamarAuth && typeof window.QamarAuth.waitForAuth === 'function') {
+                return window.QamarAuth.waitForAuth(8000);
+            }
+            return Promise.resolve();
+        };
+
+        waitAuth().then(function () {
+            const hasUser = !!(window.auth && window.auth.currentUser);
+            if (!hasUser) {
+                _applyConfigs({});
+                State.initialized = true;
+                Logger.info('📦 [bots.js] ready (defaults, no user)');
+                return null;
+            }
+            return initBots();
+        }).then(function () {
             _bindBus();
-            Logger.info('📦 [bots.js] ready');
+            if (State.initialized) {
+                Logger.info('📦 [bots.js] ready');
+            }
+        }).catch(function (e) {
+            Logger.warn('bots boot error:', e.message);
         });
     }
 
@@ -578,5 +605,5 @@
         getStatus: getStatus
     };
 
-    Logger.info('📦 [bots.js] v2.1 loaded | bots:', Object.keys(BOT_DEFS).length);
+    Logger.info('📦 [bots.js] v2.2 loaded | bots:', Object.keys(BOT_DEFS).length);
 })();
