@@ -303,7 +303,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Profile Frame Container                  ═══ -->
+<!-- ═══ Profile Frame Container (fallback)       ═══ -->
 <!-- ══════════════════════════════════════════════ -->
 <div id="profile-frame-container" class="profile-frame-container hidden">
     <div class="pfc-backdrop"></div>
@@ -381,8 +381,9 @@
 <!-- ─── Stage 9.5: UI FLOW ─── -->
 <script defer src="ui/login-flow.js"></script>
 
-<!-- ─── Stage 9.6: NAVIGATION ─── -->
+<!-- ─── Stage 9.6: NAVIGATION + PROFILE ─── -->
 <script defer src="ui/nav.js"></script>
+<script defer src="ui/profile.js"></script>
 
 <!-- ─── Stage 10: OPTIONAL ─── -->
 <script defer src="room-picker.js" data-optional="true" onerror="void 0"></script>
@@ -420,9 +421,6 @@
 
 <!-- ─── Stage 11: BOOT ─── -->
 <script defer src="core/boot.js"></script>
-
-<!-- ─── Stage 12: PROBE (مؤقت) ─── -->
-<script defer src="probe.js"></script>
 
 </body>
 </html>
