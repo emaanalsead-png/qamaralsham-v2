@@ -1,9 +1,14 @@
 // ==============================================
-// bots/bot-training.js
-// King's training panel for bot memory
+// bots/bot-training.js v2 — إصلاح زر تعديل الكلمات
 // ==============================================
 // يعتمد على: bots.js + bot-commands.js + firebase.js + auth.js + ranks.js + audit.js
 // يعطي: window.QamarBotTraining
+// ==============================================
+// ⭐ v2 (فوق v1):
+//   1. إصلاح BUG: سطر مكسور في _buildItemCard (wordlist)
+//   2. زر تعديل نظيف + preventDefault
+//   3. توافق QamarBoot.whenReady
+//   4. كل الباقي كما v1 (7 تبويبات + CRUD + import/export)
 // ==============================================
 
 (function () {
@@ -13,6 +18,8 @@
         console.error('❌ [bot-training] bots.js أو bot-commands.js غير محمّل');
         return;
     }
+
+    if (window.QamarBotTraining && window.QamarBotTraining.__v2) return;
 
     const LOG_TAG = '[TRN]';
     const Logger = {
@@ -54,8 +61,8 @@
     const State = {
         open: false,
         activeTab: 'badWords',
-        memory: {},           // { path: data }
-        filtered: {},         // { path: filteredData }
+        memory: {},
+        filtered: {},
         searchQuery: {},
         rateMap: {},
         _importing: false,
@@ -79,13 +86,7 @@
         return 0;
     }
 
-    function _isKing100() {
-        return _myLevel() >= CONFIG.KING_LEVEL;
-    }
-
-    function _isOperator() {
-        return _myLevel() >= CONFIG.OPERATOR_LEVEL;
-    }
+    function _isKing100() { return _myLevel() >= CONFIG.KING_LEVEL; }
 
     function _canTrainBots() {
         if (_isKing100()) return true;
@@ -188,7 +189,6 @@
                 const idx = paths.indexOf(path);
                 State.memory[k] = results[idx];
             });
-            // معلقة
             return window.QamarFB.get(CONFIG.PENDING_ROOT).catch(function () { return null; });
         }).then(function (pending) {
             State.memory.pending = pending;
@@ -214,7 +214,6 @@
             if (w.length < tab.minLength) throw new Error('الكلمة قصيرة جداً');
             if (w.length > 60) throw new Error('الكلمة طويلة جداً');
 
-            // كشف التكرار
             const existing = _toArray(State.memory[tabId]).map(function (x) { return (x.text || x) + ''; });
             if (existing.indexOf(w) !== -1) throw new Error('الكلمة موجودة');
 
@@ -395,7 +394,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* CRUD — pending (learn hakawati)                 */
+    /* CRUD — pending                                  */
     /* ══════════════════════════════════════════════ */
     function teachPending(pendingKey, keyword, reply) {
         return Promise.resolve().then(function () {
@@ -454,7 +453,6 @@
 
             State._importing = true;
 
-            // cache
             let cached = null;
             try {
                 const raw = localStorage.getItem(CONFIG.IMPORT_CACHE_KEY);
@@ -481,24 +479,24 @@
                     });
 
             return fetchPromise.then(function (words) {
-                // اقرأ الحالي
-                return window.QamarFB.get(CONFIG.MEM_ROOT + '/' + tab.path).catch(function () { return null; });
-            }).then(function (current) {
+                return window.QamarFB.get(CONFIG.MEM_ROOT + '/' + tab.path).catch(function () { return null; })
+                    .then(function (current) {
+                        return { words: words, current: current };
+                    });
+            }).then(function (ctx) {
                 const existingSet = {};
-                _toArray(current).forEach(function (it) {
+                _toArray(ctx.current).forEach(function (it) {
                     const t = (typeof it === 'string') ? it : (it.text || '');
                     if (t) existingSet[t] = true;
                 });
 
-                // فلترة المكرر
-                const newWords = cached.filter(function (w) { return !existingSet[w]; });
+                const newWords = ctx.words.filter(function (w) { return !existingSet[w]; });
                 if (!newWords.length) {
                     _toast('لا كلمات جديدة', 'fa-info-circle');
                     State._importing = false;
                     return { ok: true, added: 0 };
                 }
 
-                // batch writes
                 const path = CONFIG.MEM_ROOT + '/' + tab.path;
                 let written = 0;
                 const batches = [];
@@ -512,17 +510,9 @@
                         const updates = {};
                         batch.forEach(function (w) {
                             const key = newRef.push().key;
-                            updates[key] = { text: w };
+                            updates[path + '/' + key] = { text: w };
                         });
-                        return window.QamarFB.multiUpdate(
-                            (function () {
-                                const full = {};
-                                Object.keys(updates).forEach(function (k) {
-                                    full[path + '/' + k] = updates[k];
-                                });
-                                return full;
-                            })()
-                        ).then(function () {
+                        return window.QamarFB.multiUpdate(updates).then(function () {
                             written += batch.length;
                         });
                     });
@@ -650,7 +640,6 @@
             const tab = TABS[tabId];
             if (!tab.path) throw new Error('لا يمكن مسح هذا التبويب بهذه الطريقة');
 
-            // تأكيد
             const input = prompt('اكتب كلمة "حذف" للمتابعة:\n\n' + tab.label);
             if (input !== 'حذف') throw new Error('أُلغي');
 
@@ -686,7 +675,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Dialog (simple)                                 */
+    /* Dialog                                          */
     /* ══════════════════════════════════════════════ */
     function _openDlg(title, fields, onSave) {
         _closeDlg();
@@ -809,7 +798,6 @@
             'position:fixed;inset:0;z-index:15000;background:linear-gradient(180deg,#050508,#0a0a15);' +
             'display:none;flex-direction:column;direction:rtl;font-family:inherit;color:#f3f4f6;';
 
-        // Header
         const header = document.createElement('div');
         header.style.cssText =
             'padding:14px 16px;background:linear-gradient(135deg,rgba(168,85,247,0.2),rgba(0,0,0,0.4));' +
@@ -823,7 +811,6 @@
                 'border-radius:50%;cursor:pointer;font-size:14px;font-weight:900;padding:0;">✕</button>';
         ov.appendChild(header);
 
-        // Tabs
         const tabsBar = document.createElement('div');
         tabsBar.id = 'bt-tabs';
         tabsBar.style.cssText =
@@ -831,7 +818,6 @@
             'border-bottom:1px solid rgba(168,85,247,0.2);flex-shrink:0;';
         ov.appendChild(tabsBar);
 
-        // Toolbar
         const tools = document.createElement('div');
         tools.style.cssText =
             'display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid rgba(168,85,247,0.2);' +
@@ -853,16 +839,13 @@
                 'border:none;border-radius:10px;font-family:inherit;font-weight:900;font-size:12px;cursor:pointer;">🗑️ حذف الكل</button>';
         ov.appendChild(tools);
 
-        // Body
         const body = document.createElement('div');
         body.id = 'bt-body';
-        body.style.cssText =
-            'flex:1;overflow-y:auto;padding:12px;';
+        body.style.cssText = 'flex:1;overflow-y:auto;padding:12px;';
         ov.appendChild(body);
 
         document.body.appendChild(ov);
 
-        // Events
         document.getElementById('bt-close').onclick = close;
         document.getElementById('bt-add').onclick = _handleAdd;
         document.getElementById('bt-import').onclick = _handleImport;
@@ -914,9 +897,6 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* UI — Render body                                */
-    /* ══════════════════════════════════════════════ */
     function _renderBody() {
         const body = document.getElementById('bt-body');
         if (!body) return;
@@ -935,15 +915,12 @@
         const items = _buildItems(tabId);
         const filtered = items.filter(function (it) { return _matchesSearch(it, search); });
 
-        // Counter
         const counter = document.createElement('div');
         counter.style.cssText =
-            'text-align:center;color:#c084fc;font-size:11px;font-weight:900;' +
-            'padding:6px 0 10px;';
+            'text-align:center;color:#c084fc;font-size:11px;font-weight:900;padding:6px 0 10px;';
         counter.textContent = '📊 ' + filtered.length + (search ? ' / ' + items.length : '');
         body.appendChild(counter);
 
-        // Health warnings
         _renderHealthWarnings(body, tabId, items);
 
         if (!filtered.length) {
@@ -962,7 +939,6 @@
     function _buildItems(tabId) {
         const tab = TABS[tabId];
         if (!tab || !tab.path) {
-            // pending
             const p = State.memory.pending || {};
             return Object.keys(p).map(function (k) {
                 const v = p[k] || {};
@@ -994,7 +970,6 @@
             });
         }
 
-        // wordlist
         return arr.map(function (it) {
             if (typeof it === 'string') return { key: '', text: it };
             return { key: it._key || '', text: it.text || '' };
@@ -1064,7 +1039,6 @@
 
         card.appendChild(info);
 
-        // Actions
         const actions = document.createElement('div');
         actions.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
 
@@ -1085,10 +1059,8 @@
             });
             actions.appendChild(delBtn);
         } else if (tab.type === 'wordlist') {
+            // ⭐ v2: زر تعديل نظيف (بدون السطر المكسور)
             const editBtn = _mkBtn('✏️', '#3b82f6', function () {
-                _openDlg('تعديل', [
-                    { id: 'w', label: 'الكلمة', value: item.text || '', maxLength: 60 }
-                ], function (v) { return editWord(tabId, item.key, v.w); }).then_ = true;
                 _openDlg('تعديل الكلمة', [
                     { id: 'w', label: 'الكلمة', value: item.text || '', maxLength: 60 }
                 ], function (v) {
@@ -1148,12 +1120,16 @@
         b.style.cssText =
             'width:32px;height:32px;border-radius:50%;background:' + bg + ';color:#fff;' +
             'border:none;cursor:pointer;font-size:13px;padding:0;flex-shrink:0;';
-        b.onclick = function (e) { e.preventDefault(); e.stopPropagation(); handler(); };
+        b.onclick = function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            handler();
+        };
         return b;
     }
 
     /* ══════════════════════════════════════════════ */
-    /* UI — Toolbar handlers                           */
+    /* Toolbar handlers                                */
     /* ══════════════════════════════════════════════ */
     function _handleAdd() {
         const tabId = State.activeTab;
@@ -1236,7 +1212,6 @@
         return Promise.resolve().then(function () {
             if (!_canTrainBots()) throw new Error('غير مصرّح — الملك أو 90+ بصلاحية canTrainBots');
 
-            // اختيار أول تبويب مسموح
             const tabsAllowed = Object.keys(TABS).filter(_canSeeTab);
             if (!tabsAllowed.length) throw new Error('لا تبويبات مسموحة');
             if (tabsAllowed.indexOf(State.activeTab) === -1) {
@@ -1247,7 +1222,6 @@
             ov.style.display = 'flex';
             State.open = true;
 
-            // تحميل
             _loadMemory().then(function () {
                 _renderTabs();
                 _renderBody();
@@ -1295,7 +1269,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Status / Debug                                  */
+    /* Status                                          */
     /* ══════════════════════════════════════════════ */
     function getStatus() {
         const allowed = Object.keys(TABS).filter(_canSeeTab);
@@ -1315,6 +1289,7 @@
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarBotTraining = {
+        __v2: true,
         CONFIG: CONFIG,
         TABS: TABS,
 
@@ -1322,7 +1297,6 @@
         close: close,
         isOpen: isOpen,
 
-        // CRUD
         addWord: addWord,
         editWord: editWord,
         deleteWord: deleteWord,
@@ -1337,18 +1311,14 @@
         deletePending: deletePending,
         clearPending: clearPending,
 
-        // Import / Export
         importArabicList: importArabicList,
         importFromFile: importFromFile,
         exportTab: exportTab,
         clearTab: clearTab,
 
-        // Events
         onTrainingEvent: onTrainingEvent,
-
-        // Debug
         getStatus: getStatus
     };
 
-    Logger.info('📦 [bot-training.js] loaded');
+    Logger.info('📦 [bot-training.js v2] loaded — BUG-1 fixed');
 })();
