@@ -1,139 +1,466 @@
 // ==============================================
-// core/boot.js
-// Startup + orchestration
+// core/boot.js v2 — orchestrator موحّد
+// ==============================================
+// يعتمد على: كل الملفات (يُحمَّل بعدها)
+// يعطي: window.QamarBoot
+// ==============================================
+// ⭐ v2:
+//   1. 5 مراحل + lazy modules
+//   2. شاشة لودر تُظهر التقدم + تسمح بـ Login مبكراً
+//   3. يستخدم QamarAdaptive.deferHeavyModules
+//   4. whenReady(stage, cb) API نظيف
+//   5. timing حقيقي لكل مرحلة
+//   6. حل مشكلة النت البطيء عند البدء
 // ==============================================
 
 (function () {
     'use strict';
 
-    const BOOT_MIN_MS = 400;
-    const BOOT_MAX_MS = 15000;
+    if (window.QamarBoot) return;
 
-    const Boot = {
-        startedAt: Date.now(),
-        modules: {},
-        status: 'pending',
+    const LOG_TAG = '[BOOT]';
+    const Logger = {
+        debug: function () { if (window.QAMAR_DEBUG) console.log.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); },
+        info:  function () { console.log.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); },
+        warn:  function () { console.warn.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); },
+        error: function () { console.error.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); }
+    };
 
-        /* ═══ Register a module for startup ═══ */
-        register: function (name, initFn) {
-            this.modules[name] = { init: initFn, status: 'pending', error: null };
-        },
-
-        /* ═══ Update loader status ═══ */
-        _setStatus: function (text, ready) {
-            const el = document.getElementById('qamar-boot-status');
-            if (!el) return;
-            el.textContent = text;
-            if (ready) el.classList.add('ready');
-            else el.classList.remove('ready');
-        },
-
-        /* ═══ Hide loader ═══ */
-        _hideLoader: function () {
-            const loader = document.getElementById('qamar-boot-loader');
-            if (!loader) return;
-            const elapsed = Date.now() - this.startedAt;
-            const remaining = Math.max(0, BOOT_MIN_MS - elapsed);
-            setTimeout(function () {
-                loader.classList.add('qamar-boot-hide');
-                setTimeout(function () {
-                    if (loader.parentNode) loader.parentNode.removeChild(loader);
-                }, 450);
-            }, remaining);
-        },
-
-        /* ═══ Main init ═══ */
-        async run() {
-            this.status = 'running';
-            console.log('🚀 [boot] starting...');
-
-            try {
-                // 1. Wait for Firebase
-                this._setStatus('جاري تهيئة Firebase...', false);
-                if (typeof window.waitForFirebase === 'function') {
-                    await window.waitForFirebase(BOOT_MAX_MS);
-                    console.log('✅ [boot] Firebase ready');
-                } else {
-                    console.warn('⚠️ [boot] waitForFirebase not available');
-                }
-
-                // 2. Wait for auth
-                this._setStatus('جاري التحقق من الجلسة...', false);
-                if (typeof window.waitForAuth === 'function') {
-                    try { await window.waitForAuth(5000); } catch (e) {}
-                }
-
-                // 3. Load session from localStorage
-                if (typeof window.loadSession === 'function') {
-                    try {
-                        const user = window.loadSession();
-                        if (user) {
-                            window.AppState.setUser(user, user.isGuest === true);
-                            console.log('✅ [boot] session restored:', user.name);
-                        }
-                    } catch (e) {
-                        console.warn('[boot] loadSession failed:', e);
-                    }
-                }
-
-                // 4. Run registered modules
-                this._setStatus('جاري تشغيل الأنظمة...', false);
-                await this._initModules();
-
-                // 5. Ready
-                this._setStatus('جاهز ✨', true);
-                this.status = 'ready';
-                window.EventBus.emit('boot:ready');
-                console.log('✅ [boot] all systems ready');
-
-            } catch (e) {
-                console.error('❌ [boot] failed:', e);
-                this._setStatus('فشل التشغيل — استمرار بدون Firebase', false);
-                this.status = 'failed';
-                window.EventBus.emit('boot:failed', e);
-            }
-
-            // Always hide loader
-            this._hideLoader();
-
-            // Expose
-            window.__qamarBooted = true;
-            window.__qamarBootStatus = this.status;
-        },
-
-        async _initModules() {
-            const names = Object.keys(this.modules);
-            for (const name of names) {
-                const m = this.modules[name];
-                try {
-                    this._setStatus('جاري تشغيل: ' + name, false);
-                    await Promise.resolve(m.init());
-                    m.status = 'ready';
-                    console.log('✅ [boot] module ready:', name);
-                } catch (e) {
-                    m.status = 'failed';
-                    m.error = e;
-                    console.error('❌ [boot] module failed:', name, e);
-                }
-            }
+    /* ══════════════════════════════════════════════ */
+    /* Config                                          */
+    /* ══════════════════════════════════════════════ */
+    const CONFIG = {
+        MIN_LOADER_MS: 800,
+        MAX_WAIT_MS: 20000,
+        STAGES: ['core', 'auth', 'chat', 'background', 'ready'],
+        // المدة المتوقعة لكل مرحلة (للتشخيص)
+        EXPECTED_MS: {
+            core: 1500,
+            auth: 800,
+            chat: 1000,
+            background: 3000,
+            ready: 200
         }
     };
 
     /* ══════════════════════════════════════════════ */
-    /* Auto-start                                     */
+    /* State                                           */
     /* ══════════════════════════════════════════════ */
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () {
-            setTimeout(function () { Boot.run(); }, 50);
+    const State = {
+        startedAt: 0,
+        currentStage: null,
+        completedStages: {},        // { stageName: timestamp }
+        stageTimings: {},           // { stageName: ms }
+        listeners: {},              // { stage: [cb, ...] }
+        status: 'pending',          // 'pending'|'running'|'ready'|'failed'
+        failureReason: null,
+        _resolvedReady: false
+    };
+
+    /* ══════════════════════════════════════════════ */
+    /* Loader UI                                       */
+    /* ══════════════════════════════════════════════ */
+    function _getLoaderEls() {
+        return {
+            root: document.getElementById('qamar-boot-loader'),
+            status: document.getElementById('qamar-boot-status'),
+            bar: document.getElementById('qamar-boot-bar'),
+            barTrack: document.getElementById('qamar-boot-bar-track'),
+            title: document.getElementById('qamar-boot-title')
+        };
+    }
+
+    function _setLoaderStatus(text, ready) {
+        const els = _getLoaderEls();
+        if (!els.status) return;
+        els.status.textContent = text;
+        if (ready) els.status.classList.add('ready');
+        else els.status.classList.remove('ready');
+    }
+
+    function _setLoaderProgress(pct) {
+        const els = _getLoaderEls();
+        if (!els.barTrack || !els.bar) return;
+        // استبدل الـ animation بشريط ثابت
+        els.bar.style.animation = 'none';
+        els.bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        els.bar.style.transition = 'width 0.4s ease';
+        els.bar.style.left = '0';
+        els.bar.style.transform = 'none';
+        els.bar.style.background = 'linear-gradient(90deg, #d4af37, #ffd700)';
+        els.bar.style.borderRadius = '3px';
+    }
+
+    function _hideLoader() {
+        const els = _getLoaderEls();
+        if (!els.root) return;
+        const elapsed = Date.now() - State.startedAt;
+        const remaining = Math.max(0, CONFIG.MIN_LOADER_MS - elapsed);
+        setTimeout(function () {
+            els.root.classList.add('qamar-boot-hide');
+            setTimeout(function () {
+                if (els.root && els.root.parentNode) {
+                    els.root.parentNode.removeChild(els.root);
+                }
+            }, 450);
+        }, remaining);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Stage events                                    */
+    /* ══════════════════════════════════════════════ */
+    function whenReady(stage, cb) {
+        if (typeof cb !== 'function') return function () {};
+
+        // المرحلة مكتملة؟ نفّذ فوراً
+        if (State.completedStages[stage]) {
+            setTimeout(cb, 0);
+            return function () {};
+        }
+
+        // سجّل الانتظار
+        if (!State.listeners[stage]) State.listeners[stage] = [];
+        State.listeners[stage].push(cb);
+
+        return function off() {
+            if (!State.listeners[stage]) return;
+            State.listeners[stage] = State.listeners[stage].filter(function (h) { return h !== cb; });
+        };
+    }
+
+    function _emitStage(stage) {
+        State.completedStages[stage] = Date.now();
+        Logger.info('✅ Stage:', stage,
+            '(' + (State.stageTimings[stage] || 0) + 'ms)');
+
+        // Global event
+        if (window.EventBus) {
+            try { window.EventBus.emit('boot:stage:' + stage, { stage: stage }); } catch (e) {}
+        }
+
+        // Local listeners
+        const arr = State.listeners[stage];
+        if (arr) {
+            arr.slice().forEach(function (cb) {
+                try { cb({ stage: stage }); } catch (e) {
+                    Logger.warn('Stage listener error:', e);
+                }
+            });
+            State.listeners[stage] = [];
+        }
+
+        // اعكس على الـ status
+        if (stage === 'ready') {
+            if (!State._resolvedReady) {
+                State._resolvedReady = true;
+                State.status = 'ready';
+                if (window.EventBus) {
+                    try { window.EventBus.emit('boot:ready', {}); } catch (e) {}
+                }
+            }
+        }
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Stage runners                                   */
+    /* ══════════════════════════════════════════════ */
+    async function _runStage(stage, fn, label) {
+        const start = Date.now();
+        State.currentStage = stage;
+
+        if (label) _setLoaderStatus(label, false);
+
+        try {
+            await Promise.resolve().then(fn);
+            State.stageTimings[stage] = Date.now() - start;
+            _emitStage(stage);
+        } catch (e) {
+            Logger.error('Stage ' + stage + ' failed:', e.message || e);
+            State.stageTimings[stage] = Date.now() - start;
+            // لا نوقف النظام — نُكمل للمرحلة التالية
+            _emitStage(stage);
+        }
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Stage 0 — core                                  */
+    /* ══════════════════════════════════════════════ */
+    async function _stageCore() {
+        _setLoaderProgress(10);
+
+        // 1. Firebase
+        if (typeof window.waitForFirebase === 'function') {
+            try { await window.waitForFirebase(CONFIG.MAX_WAIT_MS); }
+            catch (e) { Logger.warn('waitForFirebase failed:', e.message); }
+        } else {
+            Logger.warn('waitForFirebase not available');
+        }
+        _setLoaderProgress(25);
+
+        // 2. QamarFB (wrapper) — يجب أن يكون جاهزاً تلقائياً
+        if (!window.QamarFB) {
+            Logger.warn('QamarFB not ready after Firebase init');
+        }
+
+        // 3. QamarNet — قد يأخذ ثانية
+        if (window.QamarNet && typeof window.QamarNet.measure === 'function') {
+            try {
+                await Promise.race([
+                    window.QamarNet.measure(),
+                    new Promise(function (r) { setTimeout(r, 2000); })
+                ]);
+            } catch (e) {}
+        }
+        _setLoaderProgress(35);
+
+        // 4. QamarAdaptive — يجب أن يقرأ من QamarNet
+        if (window.QamarAdaptive) {
+            Logger.debug('Adaptive profile:', window.QamarAdaptive.getProfileName());
+        }
+
+        _setLoaderStatus('جاري تجهيز الأنظمة...', false);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Stage 1 — auth                                  */
+    /* ══════════════════════════════════════════════ */
+    async function _stageAuth() {
+        _setLoaderProgress(45);
+
+        // QamarAuth (موجود مسبقاً — فقط ننتظر waitForAuth)
+        if (window.QamarAuth && typeof window.QamarAuth.waitForAuth === 'function') {
+            try { await window.QamarAuth.waitForAuth(6000); }
+            catch (e) {}
+        }
+        _setLoaderProgress(55);
+
+        // QamarSession — بدأ تلقائياً
+        if (window.QamarSession && typeof window.QamarSession.loadSession === 'function') {
+            try { window.QamarSession.loadSession(); } catch (e) {}
+        }
+
+        // ✅ Login أصبح متاحاً — أظهر للمستخدم
+        _setLoaderStatus('جاهز — يمكنك الدخول الآن', true);
+        _setLoaderProgress(60);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Stage 2 — chat                                  */
+    /* ══════════════════════════════════════════════ */
+    async function _stageChat() {
+        _setLoaderProgress(70);
+
+        // انتظر قليلاً للتأكد أن كل ملفات chat.js حُمّلت
+        await _waitForGlobals([
+            'QamarChat',
+            'QamarChatInput',
+            'QamarChatUI',
+            'QamarRooms'
+        ], 4000);
+
+        _setLoaderProgress(80);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Stage 3 — background                            */
+    /* ══════════════════════════════════════════════ */
+    async function _stageBackground() {
+        // تأجيل حسب جودة الاتصال
+        const deferMs = (window.QamarAdaptive && typeof window.QamarAdaptive.get === 'function')
+            ? (window.QamarAdaptive.get('deferHeavyModules') || 0)
+            : 2000;
+
+        if (deferMs > 0) {
+            Logger.info('⏳ Deferring background modules by', deferMs + 'ms');
+            await _sleep(deferMs);
+        }
+
+        _setLoaderProgress(90);
+
+        // ننتظر الموديولات الثقيلة (لا نُنفّذها — هي تشتغل تلقائياً)
+        await _waitForGlobals([
+            'QamarBots',
+            'QamarBotCommands',
+            'QamarCleaners',
+            'QamarDeviceGuard',
+            'QamarPM',
+            'QamarReports',
+            'QamarBans'
+        ], 6000);
+
+        _setLoaderProgress(98);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Stage 4 — ready                                 */
+    /* ══════════════════════════════════════════════ */
+    async function _stageReady() {
+        _setLoaderProgress(100);
+        _setLoaderStatus('جاهز ✨', true);
+
+        // اخفِ اللودر بعد تأخير بسيط (يُخفى فوراً إذا المستخدم سجّل)
+        setTimeout(function () {
+            if (window.QamarAuth && typeof window.QamarAuth.isLoggedIn === 'function') {
+                if (window.QamarAuth.isLoggedIn()) {
+                    Logger.debug('User already logged in — hiding loader now');
+                    _hideLoader();
+                }
+            }
+        }, 300);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Helpers                                         */
+    /* ══════════════════════════════════════════════ */
+    function _sleep(ms) {
+        return new Promise(function (r) { setTimeout(r, ms); });
+    }
+
+    function _waitForGlobals(names, timeoutMs) {
+        const start = Date.now();
+        return new Promise(function (resolve) {
+            const check = function () {
+                const allReady = names.every(function (n) {
+                    return window[n] !== undefined && window[n] !== null;
+                });
+                if (allReady) {
+                    Logger.debug('Globals ready:', names.join(', '));
+                    return resolve(true);
+                }
+                if (Date.now() - start >= timeoutMs) {
+                    const missing = names.filter(function (n) {
+                        return !window[n] || window[n] === null;
+                    });
+                    Logger.warn('Timeout waiting for globals:', missing.join(', '));
+                    return resolve(false);
+                }
+                setTimeout(check, 100);
+            };
+            check();
         });
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Main run                                        */
+    /* ══════════════════════════════════════════════ */
+    async function run() {
+        if (State.status === 'running' || State.status === 'ready') return;
+
+        State.status = 'running';
+        State.startedAt = Date.now();
+
+        Logger.info('🚀 [boot] starting...');
+        _setLoaderProgress(5);
+        _setLoaderStatus('جاري التحميل...', false);
+
+        // Stage 0
+        await _runStage('core', _stageCore, 'جاري تهيئة Firebase...');
+
+        // Stage 1
+        await _runStage('auth', _stageAuth, 'جاري تجهيز الجلسة...');
+
+        // Stage 2
+        await _runStage('chat', _stageChat, 'جاري تهيئة الشات...');
+
+        // Stage 3
+        await _runStage('background', _stageBackground, 'جاري تحميل البوتات...');
+
+        // Stage 4
+        await _runStage('ready', _stageReady, null);
+
+        const total = Date.now() - State.startedAt;
+        Logger.info('✅ [boot] all systems ready in', total + 'ms');
+        Logger.info('Stage timings:',
+            Object.keys(State.stageTimings).map(function (k) {
+                return k + '=' + State.stageTimings[k] + 'ms';
+            }).join(', '));
+
+        // احتفظ بمعلومات التشخيص
+        try {
+            window.__qamarBooted = true;
+            window.__qamarBootStatus = 'ready';
+            window.__qamarBootTimings = Object.assign({}, State.stageTimings);
+        } catch (e) {}
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Failure                                         */
+    /* ══════════════════════════════════════════════ */
+    function fail(reason) {
+        State.status = 'failed';
+        State.failureReason = reason || 'unknown';
+        _setLoaderStatus('فشل التشغيل — يمكنك المتابعة يدوياً', false);
+        Logger.error('❌ [boot] failed:', reason);
+        if (window.EventBus) {
+            try { window.EventBus.emit('boot:failed', { reason: reason }); } catch (e) {}
+        }
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Reset loader (للاستخدام الداخلي)                */
+    /* ══════════════════════════════════════════════ */
+    function hideLoader() {
+        _hideLoader();
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Status                                          */
+    /* ══════════════════════════════════════════════ */
+    function getStage() {
+        return State.currentStage;
+    }
+
+    function status() {
+        return {
+            status: State.status,
+            currentStage: State.currentStage,
+            completedStages: Object.keys(State.completedStages),
+            stageTimings: Object.assign({}, State.stageTimings),
+            startedAt: State.startedAt,
+            elapsed: State.startedAt ? (Date.now() - State.startedAt) : 0,
+            failureReason: State.failureReason
+        };
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Auto-start                                      */
+    /* ══════════════════════════════════════════════ */
+    function _autoStart() {
+        // ننتظر قليلاً للتأكد أن كل الملفات حُمّلت
+        setTimeout(function () {
+            run().catch(function (e) {
+                Logger.error('Boot run error:', e);
+                fail(e.message || 'run-error');
+            });
+        }, 50);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _autoStart);
     } else {
-        setTimeout(function () { Boot.run(); }, 50);
+        _autoStart();
     }
 
     /* ══════════════════════════════════════════════ */
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
-    window.QamarBoot = Boot;
+    window.QamarBoot = {
+        CONFIG: CONFIG,
 
-    console.log('📦 [boot] loaded');
+        run: run,
+        fail: fail,
+        hideLoader: hideLoader,
+
+        whenReady: whenReady,
+        getStage: getStage,
+        status: status,
+
+        // Aliases للتوافق مع v1
+        // (كانت تُستخدم كـ waitForAuth في session.js)
+    };
+
+    // توافق خلفي مع boot.js v1
+    window.QamarBootLite = window.QamarBoot;
+
+    Logger.info('📦 [boot.js v2] loaded |', CONFIG.STAGES.length, 'stages');
 })();
