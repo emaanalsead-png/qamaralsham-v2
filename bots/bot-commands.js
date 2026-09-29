@@ -1,6 +1,6 @@
 // ==============================================
 // bots/bot-commands.js
-// Bot logic: guardian + hakawati + quiz + islamic + musician + system
+// Bot logic: guardian + hakawati + quiz + islamic + musician + ambassador
 // ==============================================
 // يعتمد على: bots.js + firebase.js + constants.js + state.js + auth.js + ranks.js + audit.js
 // يعطي: window.QamarBotCommands
@@ -29,10 +29,16 @@
         MEM_ROOT: 'bot_memory',
         LOCKS_ROOT: 'bot_locks',
         INBOX_ROOT: 'guardian_inbox',
+        USERS_ROOT: 'users',
 
         HAKAWATI_TRIGGERS: ['حكواتي', 'بووت', 'البووت', 'البوت', 'بوت'],
         AUTO_REPLY_COOLDOWN_MS: 10 * 1000,
+
+        WELCOME_LOCK_TTL_MS: 5 * 60 * 1000,
         WELCOME_COOLDOWN_MS: 5 * 60 * 1000,
+
+        SYSTEM_MSG_INTERVAL_MS: 30 * 60 * 1000,
+        SYSTEM_MSG_LOCK_TTL_MS: 31 * 60 * 1000,
 
         JAILS_BEFORE_BAN: 3,
         PERMANENT_BAN_MS: 365 * 24 * 60 * 60 * 1000,
@@ -50,8 +56,122 @@
         PM_SCAN_INTERVAL_MS: 5 * 60 * 1000,
         PM_ALERT_DEDUP_MS: 10 * 60 * 1000,
 
-        BAD_WORD_WHITELIST: ['حمار وحشي', 'كلب الحراسة', 'يا حمار', 'أبو كلب']
+        IMMUNE_LEVEL: 90,
+        KING_LEVEL: 100,
+
+        BAD_WORD_WHITELIST: [
+            'حمار وحشي',
+            'كلب الحراسة',
+            'يا حمار',
+            'أبو كلب',
+            'كلب الصيد'
+        ]
     };
+
+    /* ══════════════════════════════════════════════ */
+    /* Bot profile SVGs                                */
+    /* ══════════════════════════════════════════════ */
+    const BOT_SVGS = {
+        ambassador: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+            '<defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">' +
+            '<stop offset="0" stop-color="#d4af37"/><stop offset="1" stop-color="#84cc16"/>' +
+            '</linearGradient></defs>' +
+            '<rect width="100" height="100" rx="22" fill="#0a0a15"/>' +
+            '<rect x="22" y="30" width="56" height="50" rx="6" fill="url(#g1)"/>' +
+            '<circle cx="78" cy="42" r="4" fill="#0a0a15"/>' +
+            '<rect x="28" y="56" width="44" height="3" rx="1.5" fill="#0a0a15" opacity="0.5"/>' +
+            '</svg>',
+
+        hakawati: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+            '<defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">' +
+            '<stop offset="0" stop-color="#9c27b0"/><stop offset="1" stop-color="#d4af37"/>' +
+            '</linearGradient></defs>' +
+            '<rect width="100" height="100" rx="22" fill="#0a0a15"/>' +
+            '<path d="M20 32 Q20 26 26 26 L48 26 L48 76 L26 76 Q20 76 20 70 Z" fill="url(#g2)"/>' +
+            '<path d="M80 32 Q80 26 74 26 L52 26 L52 76 L74 76 Q80 76 80 70 Z" fill="url(#g2)"/>' +
+            '<line x1="50" y1="26" x2="50" y2="76" stroke="#d4af37" stroke-width="1.5"/>' +
+            '<line x1="28" y1="38" x2="42" y2="38" stroke="#0a0a15" stroke-width="1.5" opacity="0.6"/>' +
+            '<line x1="28" y1="46" x2="42" y2="46" stroke="#0a0a15" stroke-width="1.5" opacity="0.6"/>' +
+            '<line x1="58" y1="38" x2="72" y2="38" stroke="#0a0a15" stroke-width="1.5" opacity="0.6"/>' +
+            '<line x1="58" y1="46" x2="72" y2="46" stroke="#0a0a15" stroke-width="1.5" opacity="0.6"/>' +
+            '</svg>',
+
+        quiz: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+            '<defs><linearGradient id="g3" x1="0" y1="0" x2="1" y2="1">' +
+            '<stop offset="0" stop-color="#ff9800"/><stop offset="1" stop-color="#ffd700"/>' +
+            '</linearGradient></defs>' +
+            '<rect width="100" height="100" rx="22" fill="#0a0a15"/>' +
+            '<circle cx="50" cy="50" r="30" fill="none" stroke="url(#g3)" stroke-width="4"/>' +
+            '<circle cx="50" cy="50" r="20" fill="none" stroke="url(#g3)" stroke-width="3"/>' +
+            '<circle cx="50" cy="50" r="10" fill="none" stroke="url(#g3)" stroke-width="2"/>' +
+            '<circle cx="50" cy="50" r="4" fill="#ff9800"/>' +
+            '</svg>',
+
+        guardian: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+            '<defs><linearGradient id="g4" x1="0" y1="0" x2="1" y2="1">' +
+            '<stop offset="0" stop-color="#ff4444"/><stop offset="1" stop-color="#8b0000"/>' +
+            '</linearGradient></defs>' +
+            '<rect width="100" height="100" rx="22" fill="#0a0a15"/>' +
+            '<path d="M50 20 L74 30 L74 56 Q74 72 50 82 Q26 72 26 56 L26 30 Z" fill="url(#g4)"/>' +
+            '<path d="M50 28 L68 35 L68 56 Q68 68 50 76 Q32 68 32 56 L32 35 Z" fill="#0a0a15" opacity="0.4"/>' +
+            '<path d="M40 52 L48 60 L62 42" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '</svg>',
+
+        islamic: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+            '<defs><radialGradient id="g5" cx="0.35" cy="0.35">' +
+            '<stop offset="0" stop-color="#fffef0"/>' +
+            '<stop offset="0.4" stop-color="#ffd700"/>' +
+            '<stop offset="1" stop-color="#b8860b"/>' +
+            '</radialGradient></defs>' +
+            '<rect width="100" height="100" rx="22" fill="#0a0a15"/>' +
+            '<path d="M 62 22 A 28 28 0 1 0 62 78 A 22 22 0 1 1 62 22 Z" fill="url(#g5)"/>' +
+            '<circle cx="32" cy="32" r="1.5" fill="#ffd700"/>' +
+            '<circle cx="28" cy="60" r="1.2" fill="#ffd700"/>' +
+            '<circle cx="36" cy="72" r="1" fill="#ffd700"/>' +
+            '</svg>',
+
+        musician: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+            '<defs><linearGradient id="g6" x1="0" y1="0" x2="1" y2="1">' +
+            '<stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#d4af37"/>' +
+            '</linearGradient></defs>' +
+            '<rect width="100" height="100" rx="22" fill="#0a0a15"/>' +
+            '<circle cx="38" cy="66" r="10" fill="url(#g6)"/>' +
+            '<circle cx="66" cy="60" r="10" fill="url(#g6)"/>' +
+            '<rect x="45" y="30" width="3" height="42" fill="url(#g6)"/>' +
+            '<rect x="73" y="24" width="3" height="42" fill="url(#g6)"/>' +
+            '<rect x="45" y="24" width="31" height="8" fill="url(#g6)"/>' +
+            '</svg>'
+    };
+
+    /* ══════════════════════════════════════════════ */
+    /* System messages (30 min)                        */
+    /* ══════════════════════════════════════════════ */
+    const SYSTEM_MESSAGES = [
+        // 🤝 احترام
+        { cat: 'respect', text: 'احترم أخاك كما تحب أن تُحترم' },
+        { cat: 'respect', text: 'الكلمة الطيبة صدقة، فلا تبخل بها' },
+        { cat: 'respect', text: 'احترام الآخرين ليس ضعفاً بل قوة' },
+        // 🎯 مشاركة
+        { cat: 'engage', text: 'شاركنا رأيك، فوجودك يُثري المكان' },
+        { cat: 'engage', text: 'كل مشاركة تُضيف للحوار قيمة' },
+        { cat: 'engage', text: 'لا تتردد في الكتابة، هذا بيتك الثاني' },
+        // 🌙 ترحيب جماعي (يُبدَّل {room})
+        { cat: 'welcome', text: 'أهلاً وسهلاً بكل من في {room}' },
+        { cat: 'welcome', text: 'نوّرتوا {room}، يا أهلاً وسهلاً' },
+        { cat: 'welcome', text: 'مرحباً بالجميع في {room}' },
+        // 🤍 صلاة
+        { cat: 'salah', text: 'اللهم صلِّ وسلِّم على نبينا محمد' },
+        { cat: 'salah', text: 'اللهم صلِّ على محمد وعلى آل محمد' },
+        { cat: 'salah', text: 'صلى الله عليه وسلم تسليماً كثيراً' },
+        // 📜 حكمة
+        { cat: 'wisdom', text: 'قيمة المرء ما يُحسنه' },
+        { cat: 'wisdom', text: 'خير الكلام ما قلّ ودلّ' },
+        { cat: 'wisdom', text: 'من صبر، ظفر' },
+        // 📌 قواعد
+        { cat: 'rules', text: 'التجريح والإساءة يُعاقبان في هذا المكان' },
+        { cat: 'rules', text: 'احترم قوانين الروم، فهي لحماية الجميع' },
+        { cat: 'rules', text: 'الروم للجميع، فشارك بلطف' }
+    ];
 
     /* ══════════════════════════════════════════════ */
     /* State                                           */
@@ -71,6 +191,8 @@
         forcedListener: null,
         pmHookInstalled: false,
         listeners: [],
+        botProfilesReady: false,
+        lastRoom: null,
         _initialized: false
     };
 
@@ -90,19 +212,31 @@
         return null;
     }
 
-    function _isGuest() {
-        if (window.QamarAuth && window.QamarAuth.isGuest) return window.QamarAuth.isGuest();
-        return false;
+    function _myLevel() {
+        if (window.QamarRanks && window.QamarRanks.myLevel) return window.QamarRanks.myLevel();
+        const u = _getCurrentUser();
+        return u ? Number(u.rankLevel) || 0 : 0;
     }
 
     function _isKing() {
-        if (window.QamarRanks && window.QamarRanks.isKing) return window.QamarRanks.isKing();
+        return _myLevel() >= CONFIG.KING_LEVEL;
+    }
+
+    function _isGuest() {
+        if (window.QamarAuth && window.QamarAuth.isGuest) return window.QamarAuth.isGuest();
         return false;
     }
 
     function _getCurrentRoom() {
         if (window.AppState && window.AppState.currentRoom) return window.AppState.currentRoom;
         try { return localStorage.getItem('qamar_last_room') || 'general'; } catch (e) { return 'general'; }
+    }
+
+    function _getRoomName(roomId) {
+        if (window.QAMAR && window.QAMAR.ROOMS && window.QAMAR.ROOMS[roomId]) {
+            return window.QAMAR.ROOMS[roomId].name || roomId;
+        }
+        return roomId;
     }
 
     function _toArray(val) {
@@ -119,8 +253,10 @@
         });
     }
 
+    function _now() { return Date.now(); }
+
     /* ══════════════════════════════════════════════ */
-    /* Arabic normalization                            */
+    /* Normalize + Match                               */
     /* ══════════════════════════════════════════════ */
     function _normalize(text) {
         if (!text) return '';
@@ -184,6 +320,57 @@
         return s[0] + '*'.repeat(Math.min(s.length - 2, 5)) + s[s.length - 1];
     }
 
+    function _simpleHash(str) {
+        let h = 5381;
+        const s = String(str);
+        for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+        return h.toString(36);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Bot profiles (King only)                        */
+    /* ══════════════════════════════════════════════ */
+    function ensureBotProfiles() {
+        if (State.botProfilesReady) return Promise.resolve(true);
+        if (!_isKing()) return Promise.resolve(false);
+
+        const defs = window.QamarBots.BOT_DEFS;
+        const promises = Object.keys(defs).map(function (botId) {
+            const def = defs[botId];
+            const botUid = 'bot_' + botId;
+            return window.QamarFB.get(CONFIG.USERS_ROOT + '/' + botUid).then(function (existing) {
+                if (existing) return null; // موجود
+                const svg = BOT_SVGS[botId] || BOT_SVGS.guardian;
+                const avatar = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+                const payload = {
+                    uid: botUid,
+                    name: def.name,
+                    code: 'BOT·' + botId.substring(0, 3).toUpperCase(),
+                    avatar: avatar,
+                    color: def.color,
+                    bio: def.description,
+                    rank: 'Bot',
+                    rankLevel: 0,
+                    isBot: true,
+                    botId: botId,
+                    isGuest: false,
+                    createdAt: window.QamarFB.serverTime(),
+                    lastSeen: window.QamarFB.serverTime()
+                };
+                return window.QamarFB.set(CONFIG.USERS_ROOT + '/' + botUid, payload);
+            }).catch(function (e) {
+                Logger.warn('ensureBotProfile ' + botId + ':', e.message);
+                return null;
+            });
+        });
+
+        return Promise.all(promises).then(function () {
+            State.botProfilesReady = true;
+            Logger.info('✅ Bot profiles ensured (6 bots)');
+            return true;
+        });
+    }
+
     /* ══════════════════════════════════════════════ */
     /* Events                                          */
     /* ══════════════════════════════════════════════ */
@@ -205,7 +392,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Load bot memory                                 */
+    /* Memory                                          */
     /* ══════════════════════════════════════════════ */
     function loadMemory() {
         return Promise.all([
@@ -222,33 +409,46 @@
             State.hakawatiAuto = r[3] || {};
             State.quiz = _toArray(r[4]);
             State.islamic = _toArray(r[5]).map(function (x) { return typeof x === 'string' ? x : (x.text || ''); }).filter(Boolean);
-            Logger.info('📚 Memory loaded | bad:', State.badWords.length, '| kick:', State.kickWords.length, '| quiz:', State.quiz.length);
-            _emit('bot-commands:memoryLoaded', {
-                bad: State.badWords.length, kick: State.kickWords.length,
-                hakawati: Object.keys(State.hakawati).length,
-                quiz: State.quiz.length, islamic: State.islamic.length
-            });
+            Logger.info('📚 Memory | bad:', State.badWords.length, '| kick:', State.kickWords.length, '| quiz:', State.quiz.length);
+            _emit('bot-commands:memoryLoaded', getStatus());
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* ═══════ GUARDIAN — في الغرف ═══════            */
-    /* ══════════════════════════════════════════════ */
+    function reloadMemory() {
+        return loadMemory().then(function () { return { ok: true }; });
+    }
 
-    // كلمة طرد → ban دائم فوري
+    /* ══════════════════════════════════════════════ */
+    /* Immunity + King check                           */
+    /* ══════════════════════════════════════════════ */
+    function _isImmune(uid) {
+        if (!uid) return Promise.resolve(false);
+        return window.QamarFB.get('users/' + uid + '/rankLevel').then(function (lvl) {
+            return (Number(lvl) || 0) >= CONFIG.IMMUNE_LEVEL;
+        }).catch(function () { return false; });
+    }
+
+    function _isKingUser(uid) {
+        if (!uid) return Promise.resolve(false);
+        return window.QamarFB.get('users/' + uid + '/rankLevel').then(function (lvl) {
+            return (Number(lvl) || 0) >= CONFIG.KING_LEVEL;
+        }).catch(function () { return false; });
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* ═══════ GUARDIAN (rooms) ═══════                */
+    /* ══════════════════════════════════════════════ */
     function _handleKickWord(msg, kickWord, roomId) {
         const uid = msg.senderUid;
         if (!uid) return Promise.resolve();
 
-        // فحص الحصانة
         return _isImmune(uid).then(function (immune) {
             if (immune) return null;
 
-            // احفظ النص الأصلي + اخف الرسالة
             return _hideMessage(msg, roomId, 'kick_word:' + kickWord).then(function () {
                 return window.QamarFB.get('users/' + uid).then(function (u) {
                     u = u || {};
-                    const now = Date.now();
+                    const now = _now();
                     const updates = {};
                     updates['users/' + uid + '/isBanned'] = true;
                     updates['users/' + uid + '/permanentBan'] = true;
@@ -260,9 +460,7 @@
                     updates['users/' + uid + '/kickCount'] = (Number(u.kickCount) || 0) + 1;
 
                     return window.QamarFB.multiUpdate(updates).then(function () {
-                        // حاول حظر الجهاز
                         _tryBanDevice(uid).catch(function () {});
-                        // رسالة في الغرفة
                         const text = '🚪 السجان طرد ' + (msg.senderName || '—') + ' نهائياً!\n' +
                                      '❌ كلمة محظورة: ' + _maskWord(kickWord) + '\n' +
                                      '⏰ الحظر: دائم + بصمة الجهاز';
@@ -280,7 +478,6 @@
         }).catch(function (e) { Logger.warn('handleKickWord:', e.message); });
     }
 
-    // كلمة سجن → سجن تصاعدي
     function _handleBadWord(msg, badWord, roomId) {
         const uid = msg.senderUid;
         if (!uid) return Promise.resolve();
@@ -291,7 +488,7 @@
             return _hideMessage(msg, roomId, 'bad_word:' + badWord).then(function () {
                 return window.QamarFB.get('users/' + uid).then(function (u) {
                     u = u || {};
-                    const now = Date.now();
+                    const now = _now();
                     const warnCount = (Number(u.warnings) || 0) + 1;
                     let jailCount = Number(u.jailCount) || 0;
                     const lastJailAt = Number(u.lastJailAt) || 0;
@@ -302,7 +499,6 @@
                         ESCALATION_MULTIPLIER: 2
                     };
 
-                    // 3 سجنات سابقة → ban دائم
                     if (jailCount >= CONFIG.JAILS_BEFORE_BAN) {
                         const updates = {};
                         updates['users/' + uid + '/isBanned'] = true;
@@ -319,7 +515,6 @@
                         });
                     }
 
-                    // حساب المدة التصاعدية
                     const withinWindow = (now - lastJailAt) < JAIL.ESCALATION_WINDOW_MS;
                     let duration = withinWindow && jailCount > 0
                         ? JAIL.FIRST_OFFENSE_MS * Math.pow(JAIL.ESCALATION_MULTIPLIER, jailCount)
@@ -340,13 +535,11 @@
                     updates['users/' + uid + '/lastJailAt'] = now;
                     updates['users/' + uid + '/warnings'] = warnCount;
 
-                    // احفظ الغرفة الحالية
-                    const currentRoom = (window.AppState && window.AppState.currentRoom) || roomId;
-                    if (currentRoom && currentRoom !== 'jail') {
-                        updates['users/' + uid + '/lastRoomBeforeJail'] = currentRoom;
+                    const curRoom = roomId || _getCurrentRoom();
+                    if (curRoom && curRoom !== 'jail') {
+                        updates['users/' + uid + '/lastRoomBeforeJail'] = curRoom;
                     }
 
-                    // نقل قسري للجنة
                     updates['user_presence/' + uid + '/state'] = 'online';
                     updates['user_presence/' + uid + '/room'] = 'jail';
                     updates['user_presence/' + uid + '/forced'] = true;
@@ -354,7 +547,6 @@
                     updates['user_presence/' + uid + '/forcedReason'] = 'jail';
 
                     return window.QamarFB.multiUpdate(updates).then(function () {
-                        // جدولة الإخراج
                         _scheduleJailRelease(uid, duration);
 
                         const warnLine = remaining > 0
@@ -380,23 +572,22 @@
         }).catch(function (e) { Logger.warn('handleBadWord:', e.message); });
     }
 
-    // جدولة إخراج المسجون
     function _scheduleJailRelease(uid, duration) {
-        if (duration > 30 * 60 * 1000) return; // لا ننتظر أكثر من 30 دقيقة في العميل
+        if (duration > 30 * 60 * 1000) return;
         setTimeout(function () {
             window.QamarFB.get('users/' + uid).then(function (u) {
                 if (!u || !u.isJailed) return;
                 const until = Number(u.jailUntil) || 0;
-                if (Date.now() < until) return;
+                if (_now() < until) return;
                 const updates = {};
                 updates['users/' + uid + '/isJailed'] = false;
                 updates['users/' + uid + '/jailUntil'] = 0;
-                updates['users/' + uid + '/jailReleasedAt'] = Date.now();
+                updates['users/' + uid + '/jailReleasedAt'] = _now();
 
                 const lastRoom = u.lastRoomBeforeJail || 'general';
                 updates['user_presence/' + uid + '/room'] = lastRoom;
                 updates['user_presence/' + uid + '/forced'] = true;
-                updates['user_presence/' + uid + '/lastChanged'] = Date.now();
+                updates['user_presence/' + uid + '/lastChanged'] = _now();
                 updates['user_presence/' + uid + '/forcedReason'] = 'jail_release';
                 updates['users/' + uid + '/lastRoomBeforeJail'] = null;
 
@@ -410,7 +601,6 @@
         }, Math.min(duration + 2000, 30 * 60 * 1000));
     }
 
-    // إخفاء الرسالة (soft hide)
     function _hideMessage(msg, roomId, reason) {
         const msgId = msg._id || msg._fbKey;
         if (!msgId || !roomId) return Promise.resolve();
@@ -422,21 +612,11 @@
         return window.QamarFB.multiUpdate(updates).catch(function () {});
     }
 
-    // فحص الحصانة (rankLevel >= 90 أو King)
-    function _isImmune(uid) {
-        if (!uid) return Promise.resolve(false);
-        return window.QamarFB.get('users/' + uid + '/rankLevel').then(function (lvl) {
-            return (Number(lvl) || 0) >= 90;
-        }).catch(function () { return false; });
-    }
-
-    // محاولة حظر أجهزة المستخدم
     function _tryBanDevice(uid) {
-        if (!window.QamarDeviceGuard) return Promise.resolve();
         return window.QamarFB.get('users/' + uid + '/devices').then(function (devices) {
             if (!devices) return;
             const updates = {};
-            const now = Date.now();
+            const now = _now();
             Object.keys(devices).forEach(function (deviceId) {
                 updates['banned_devices/' + deviceId] = {
                     uid: uid,
@@ -453,41 +633,36 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ GUARDIAN — مراقبة الخاص (NEW v2) ═══════ */
+    /* ═══════ GUARDIAN (PM — notify only) ═══════    */
     /* ══════════════════════════════════════════════ */
-
-    // تثبيت الخطافات على pm
     function _installPmHooks() {
         if (State.pmHookInstalled) return;
         if (!window.QamarPM) return;
 
         State.pmHookInstalled = true;
 
-        // ⭐ hook 1: sender side
         if (typeof window.QamarPM.send === 'function') {
             const _origSend = window.QamarPM.send;
             window.QamarPM.send = function (toUid, text, options) {
-                if (text && State.kickWords.length + State.badWords.length > 0) {
+                if (text && (State.kickWords.length + State.badWords.length > 0)) {
                     _checkPmViolation(toUid, text, 'send').catch(function () {});
                 }
                 return _origSend.call(this, toUid, text, options);
             };
         }
 
-        // ⭐ hook 2: recipient side — يستمع للحدث pm:messages
         if (window.EventBus) {
             window.EventBus.on('pm:messages', function (payload) {
                 if (!payload || !payload.otherUid || !Array.isArray(payload.messages)) return;
                 payload.messages.slice(-5).forEach(function (m) {
                     if (!m || !m.text) return;
-                    if (m.fromUid === _getCurrentUid()) return; // لا نرصد رسائلنا
+                    if (m.fromUid === _getCurrentUid()) return;
                     _checkPmViolation(m.fromUid, m.text, 'receive', payload.otherUid).catch(function () {});
                 });
             });
         }
     }
 
-    // فحص رسالة خاصة
     function _checkPmViolation(otherUid, text, side, conversationWith) {
         return Promise.resolve().then(function () {
             const me = _getCurrentUid();
@@ -498,13 +673,11 @@
             const matched = kick || bad;
             if (!matched) return;
 
-            // dedup
             const hash = _simpleHash(me + '|' + otherUid + '|' + matched + '|' + text.substring(0, 40));
             const last = State.pmAlertDedup[hash];
-            if (last && (Date.now() - last) < CONFIG.PM_ALERT_DEDUP_MS) return;
-            State.pmAlertDedup[hash] = Date.now();
+            if (last && (_now() - last) < CONFIG.PM_ALERT_DEDUP_MS) return;
+            State.pmAlertDedup[hash] = _now();
 
-            // اقرأ بيانات المُرسِل
             const senderUid = (side === 'receive') ? otherUid : me;
             const recipientUid = (side === 'receive') ? me : otherUid;
 
@@ -531,11 +704,10 @@
         }).catch(function (e) { Logger.warn('checkPmViolation:', e.message); });
     }
 
-    // إرسال إشعار للملك
     function _sendGuardianInbox(alert) {
         return window.QamarFB.get('config/king_uid').then(function (kingUid) {
             if (!kingUid) return;
-            const rid = 'ga_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
+            const rid = 'ga_' + _now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
             const payload = Object.assign({
                 from: 'bot_guardian',
                 fromName: 'السجان',
@@ -543,7 +715,6 @@
                 read: false
             }, alert);
 
-            // نص للعرض
             const sevIcon = alert.severity === 'kick' ? '🚪' : '⚠️';
             payload.text = sevIcon + ' رسالة خاصة مريبة\n' +
                            '👤 المُخالف: ' + (alert.suspectName || '—') + '\n' +
@@ -558,13 +729,6 @@
                     Logger.info('📬 Guardian inbox alert:', alert.type);
                 });
         }).catch(function (e) { Logger.warn('sendGuardianInbox:', e.message); });
-    }
-
-    function _simpleHash(str) {
-        let h = 5381;
-        const s = String(str);
-        for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
-        return h.toString(36);
     }
 
     /* ══════════════════════════════════════════════ */
@@ -629,7 +793,7 @@
         const text = String(msg.text || '');
         const uid = msg.senderUid;
 
-        // 1) trigger
+        // trigger → يرد حتى على الملك
         if (_hasHakawatiTrigger(text)) {
             const q = _stripHakawatiTriggers(text);
             if (!q) return;
@@ -642,13 +806,17 @@
             return;
         }
 
-        // 2) auto-reply
+        // auto-reply → يستثني الملك (شبحية)
+        if (_isKing()) return;
+
         const auto = _findAutoReply(text);
         if (!auto) return;
+
         const cooldownKey = uid + '::' + auto.key;
         const last = State.autoReplyCooldown[cooldownKey];
-        if (last && (Date.now() - last) < CONFIG.AUTO_REPLY_COOLDOWN_MS) return;
-        State.autoReplyCooldown[cooldownKey] = Date.now();
+        if (last && (_now() - last) < CONFIG.AUTO_REPLY_COOLDOWN_MS) return;
+        State.autoReplyCooldown[cooldownKey] = _now();
+
         setTimeout(function () {
             window.QamarBots.botSpeak('hakawati', roomId, '📖 ' + auto.reply, { force: true });
         }, 700);
@@ -676,7 +844,7 @@
         const answersArr = _toArray(q.answers).map(function (x) { return String(x); });
         if (!answersArr.length) return;
 
-        const startedAt = Date.now();
+        const startedAt = _now();
         const text = '🎯 سؤال جديد!\n\n' + (q.q || '—') + '\n\n⏳ أول 3 إجابات صحيحة: 10 / 5 / 2 نقطة';
 
         window.QamarFB.set(CONFIG.LOCKS_ROOT + '/quiz_current', {
@@ -690,7 +858,6 @@
         }).then(function () {
             window.QamarBots.botSpeak('quiz', 'quiz', text, { force: true });
 
-            // hint بعد دقيقة
             setTimeout(function () {
                 window.QamarFB.get(CONFIG.LOCKS_ROOT + '/quiz_current').then(function (c) {
                     if (!c || c.startedAt !== startedAt || c.closed) return;
@@ -718,16 +885,18 @@
         const text = String(msg.text || '').trim();
         if (!text) return;
 
+        // الملك لا يحتسب
+        if (_isKing()) return;
+
         window.QamarFB.get(CONFIG.LOCKS_ROOT + '/quiz_current').then(function (qz) {
             if (!qz || qz.closed) return;
-            if (Date.now() - (qz.startedAt || 0) > CONFIG.QUIZ_WINDOW_MS) return;
+            if (_now() - (qz.startedAt || 0) > CONFIG.QUIZ_WINDOW_MS) return;
 
             const answers = _toArray(qz.answers).map(String);
             const ua = _normalize(text);
             const isMatch = answers.some(function (a) { return ua === _normalize(a); });
             if (!isMatch) return;
 
-            // معاملة العداد
             window.QamarFB.transaction(CONFIG.LOCKS_ROOT + '/quiz_current/winnersCount', function (c) {
                 const n = (c || 0);
                 if (n >= CONFIG.QUIZ_MAX_WINNERS) return;
@@ -738,11 +907,10 @@
                 const points = CONFIG.QUIZ_POINTS[rank] || 0;
                 const updates = {};
                 updates[CONFIG.LOCKS_ROOT + '/quiz_current/winners/' + msg.senderUid] = {
-                    rank: rank, name: msg.senderName, at: Date.now(), points: points
+                    rank: rank, name: msg.senderName, at: _now(), points: points
                 };
                 window.QamarFB.multiUpdate(updates).catch(function () {});
 
-                // نقاط
                 window.QamarFB.transaction('bot_data/quiz/scores/' + msg.senderUid, function (c) {
                     return (c || 0) + points;
                 }).catch(function () {});
@@ -772,12 +940,12 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ MUSICIAN (studio welcome) ═══════       */
+    /* ═══════ MUSICIAN ═══════                       */
     /* ══════════════════════════════════════════════ */
     function _musicianWelcome(uid, roomId) {
         if (roomId !== 'studio') return;
-        const now = Date.now();
-        const key = 'bot_locks/welcome_musician/' + roomId + '/' + uid;
+        const now = _now();
+        const key = CONFIG.LOCKS_ROOT + '/welcome_musician/' + roomId + '/' + uid;
         window.QamarFB.transaction(key, function (c) {
             if (c && (now - (c.at || 0)) < CONFIG.WELCOME_COOLDOWN_MS) return;
             return { at: now };
@@ -785,6 +953,7 @@
             if (!r || !r.committed) return;
             window.QamarFB.get('users/' + uid).then(function (u) {
                 if (!u) return;
+                if ((Number(u.rankLevel) || 0) >= CONFIG.IMMUNE_LEVEL) return; // شبحية
                 const name = u.name || '—';
                 const text = '🎵 أهلاً ' + name + ' في استوديو قمر الشام!\n\n' +
                              'أنا موسيقار الشام 🎼 — رفيقك هنا.\n\n' +
@@ -795,6 +964,95 @@
                 window.QamarBots.botSpeak('musician', roomId, text, { force: true });
             }).catch(function () {});
         }).catch(function () {});
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* ═══════ WELCOME (join room) ═══════             */
+    /* ══════════════════════════════════════════════ */
+    function _sendWelcome(uid, roomId) {
+        if (!uid || !roomId) return;
+        if (roomId === 'studio' || roomId === 'jail') return;
+
+        // شبحية — لا نرحّب بالملك أو 90+
+        return window.QamarFB.get('users/' + uid).then(function (u) {
+            if (!u) return;
+            const lvl = Number(u.rankLevel) || 0;
+            if (lvl >= CONFIG.IMMUNE_LEVEL) return;
+
+            const now = _now();
+            const key = CONFIG.LOCKS_ROOT + '/welcome/' + roomId + '/' + uid;
+            return window.QamarFB.transaction(key, function (c) {
+                if (c && (now - (c.at || 0)) < CONFIG.WELCOME_LOCK_TTL_MS) return;
+                return { at: now };
+            }).then(function (r) {
+                if (!r || !r.committed) return;
+
+                const name = u.name || '—';
+                const avatar = u.avatar || null;
+                const roomName = _getRoomName(roomId);
+
+                // استخدم botSpeak مع attachment مخصص
+                const text = '🚪 انضم ' + name + ' إلى ' + roomName;
+
+                // نص بسيط + metadata
+                return window.QamarBots.botSpeak('ambassador', roomId, text, {
+                    force: true,
+                    isSystem: true,
+                    metadata: {
+                        isWelcome: true,
+                        welcomeFor: uid,
+                        welcomeName: name,
+                        welcomeAvatar: avatar,
+                        roomName: roomName,
+                        roomId: roomId
+                    }
+                });
+            });
+        }).catch(function (e) { Logger.warn('sendWelcome:', e.message); });
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* ═══════ System messages (30 min) ═══════        */
+    /* ══════════════════════════════════════════════ */
+    function _pickSystemMessage(roomId) {
+        const roomName = _getRoomName(roomId);
+        const pick = SYSTEM_MESSAGES[Math.floor(Math.random() * SYSTEM_MESSAGES.length)];
+        return pick.text.replace('{room}', roomName);
+    }
+
+    function _postSystemMessage() {
+        const roomId = _getCurrentRoom();
+        if (!roomId) return;
+        if (roomId === 'jail' || roomId === 'studio') return;
+
+        const now = _now();
+        const lockKey = CONFIG.LOCKS_ROOT + '/system_msg/' + roomId + '/lock';
+
+        window.QamarFB.transaction(lockKey, function (c) {
+            if (c && (now - (c.at || 0)) < CONFIG.SYSTEM_MSG_LOCK_TTL_MS) return;
+            return { at: now, by: _getCurrentUid() || 'unknown' };
+        }).then(function (r) {
+            if (!r || !r.committed) return;
+
+            const text = _pickSystemMessage(roomId);
+            return window.QamarBots.botSpeak('ambassador', roomId, text, {
+                force: true,
+                isSystem: true,
+                metadata: {
+                    isSystemMsg: true,
+                    category: 'periodic'
+                }
+            }).then(function (res) {
+                // سجّل البصمة
+                if (res && res.ok) {
+                    window.QamarFB.set(CONFIG.LOCKS_ROOT + '/system_msg/' + roomId + '/lastPost', {
+                        at: now,
+                        text: text
+                    }).catch(function () {});
+                }
+                return res;
+            });
+        }).catch(function (e) { Logger.warn('postSystemMessage:', e.message); });
     }
 
     /* ══════════════════════════════════════════════ */
@@ -812,13 +1070,11 @@
             if (!p || p.forced !== true || !p.room) return;
             const currentRoom = (window.AppState && window.AppState.currentRoom) || _getCurrentRoom();
             if (p.room === currentRoom) {
-                // نظّف العلم
                 window.QamarFB.update('user_presence/' + uid, {
                     forced: null, forcedReason: null
                 }).catch(function () {});
                 return;
             }
-            // نفّذ النقل
             const reason = p.forcedReason || 'system';
             if (window.QamarRooms && typeof window.QamarRooms.switchTo === 'function') {
                 window.QamarRooms.switchTo(p.room, { force: true }).catch(function () {});
@@ -844,7 +1100,33 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ Incoming Message Router ═══════         */
+    /* Room change (welcome)                           */
+    /* ══════════════════════════════════════════════ */
+    function _onRoomChanged(payload) {
+        const roomId = (payload && payload.roomId) || payload;
+        if (!roomId) return;
+        const uid = _getCurrentUid();
+        if (!uid) return;
+
+        // تجنّب التكرار عند بدء التشغيل
+        if (State.lastRoom === null) {
+            State.lastRoom = roomId;
+            return;
+        }
+        if (State.lastRoom === roomId) return;
+        State.lastRoom = roomId;
+
+        // رسالة الانضمام
+        _sendWelcome(uid, roomId).catch(function () {});
+
+        // موسيقار (استديو)
+        if (roomId === 'studio') {
+            _musicianWelcome(uid, roomId);
+        }
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Incoming message router                         */
     /* ══════════════════════════════════════════════ */
     function _onIncoming(payload) {
         if (!payload || !payload.msg) return;
@@ -863,17 +1145,17 @@
 
         const text = String(msg.text || '');
         if (!text) return;
-        if (text.charAt(0) === '!') return; // أوامر
+        if (text.charAt(0) === '!') return;
 
-        // 1) فحص كلمة الطرد (أولوية قصوى)
+        // 1) كلمة طرد
         const kick = _matchWord(text, State.kickWords);
         if (kick) { _handleKickWord(msg, kick, roomId); return; }
 
-        // 2) فحص كلمة السجن
+        // 2) كلمة سجن
         const bad = _matchWord(text, State.badWords);
         if (bad) { _handleBadWord(msg, bad, roomId); return; }
 
-        // 3) Quiz (روم المسابقات)
+        // 3) Quiz
         if (roomId === 'quiz') {
             _checkQuizAnswer(msg, roomId);
         }
@@ -883,7 +1165,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ Periodic Tasks ═══════                  */
+    /* Periodic tasks                                  */
     /* ══════════════════════════════════════════════ */
     function _startPeriodicTasks() {
         // Islamic
@@ -900,7 +1182,13 @@
             if (window.QamarBots.isBotEnabled('quiz')) _postQuiz();
         }, CONFIG.QUIZ_INTERVAL_MS));
 
-        // PM background scan (King only — للتقاط الرسائل الفائتة)
+        // System messages (30 min) — أول تشغيل بعد 30 دقيقة
+        setTimeout(function () {
+            _postSystemMessage();
+            State.intervalTimers.push(setInterval(_postSystemMessage, CONFIG.SYSTEM_MSG_INTERVAL_MS));
+        }, CONFIG.SYSTEM_MSG_INTERVAL_MS);
+
+        // PM background scan (King only)
         State.intervalTimers.push(setInterval(function () {
             if (!_isKing()) return;
             _pmScanRecent().catch(function () {});
@@ -908,17 +1196,15 @@
     }
 
     function _pmScanRecent() {
-        // الملك يقرأ أحدث الرسائل من كل محادثة
-        // ملاحظة: يقفز على رسائل الملك نفسه لتجنّب الازدواج
         return window.QamarFB.get('user_private_messages').then(function (all) {
             if (!all) return;
-            const cutoff = Date.now() - 5 * 60 * 1000;
+            const cutoff = _now() - 5 * 60 * 1000;
             const me = _getCurrentUid();
             Object.keys(all).forEach(function (uidA) {
                 if (uidA === me) return;
                 const chatsA = all[uidA] || {};
                 Object.keys(chatsA).forEach(function (uidB) {
-                    if (uidA > uidB) return; // معالجة زوج واحد فقط
+                    if (uidA > uidB) return;
                     const msgs = chatsA[uidB] || {};
                     Object.keys(msgs).forEach(function (msgId) {
                         const m = msgs[msgId];
@@ -928,7 +1214,6 @@
                         const kick = _matchWord(m.text, State.kickWords);
                         const bad = kick ? null : _matchWord(m.text, State.badWords);
                         if (!kick && !bad) return;
-                        // مرر للتسجيل
                         _sendGuardianInbox({
                             type: 'pm_violation',
                             severity: kick ? 'kick' : 'jail',
@@ -948,46 +1233,21 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* System notifications API                        */
+    /* Public: notify (system messages)                */
     /* ══════════════════════════════════════════════ */
     function notify(kind, target, options) {
-        return window.QamarBots.broadcastSystem(kind, target, null, options || {});
+        options = options || {};
+        // تأخير ثانية
+        return new Promise(function (resolve) {
+            setTimeout(function () {
+                window.QamarBots.broadcastSystem(kind, target, null, options)
+                    .then(resolve).catch(function () { resolve({ ok: false }); });
+            }, 1000);
+        });
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Welcome (when user joins a room)                */
-    /* ══════════════════════════════════════════════ */
-    function _onPresenceChange(uid, p) {
-        if (!uid || !p) return;
-        if (p.state !== 'online') return;
-        if (!p.room) return;
-        // موسيقار في الاستديو
-        if (p.room === 'studio') {
-            _musicianWelcome(uid, p.room);
-        }
-    }
-
-    function _startPresenceListener() {
-        try {
-            window.QamarFB.onValue('user_presence', function (data) {
-                if (!data) return;
-                // نراقب فقط عند الدخول للاستديو
-                const me = _getCurrentUid();
-                Object.keys(data).forEach(function (uid) {
-                    if (uid === me) return;
-                    const p = data[uid];
-                    if (!p || p.state !== 'online') return;
-                    if (p.room !== 'studio') return;
-                    const lastChanged = p.lastChanged || 0;
-                    if (Date.now() - lastChanged > 60000) return;
-                    _musicianWelcome(uid, p.room);
-                });
-            }, function () {});
-        } catch (e) {}
-    }
-
-    /* ══════════════════════════════════════════════ */
-    /* Status / Debug                                  */
+    /* Status                                          */
     /* ══════════════════════════════════════════════ */
     function getStatus() {
         return {
@@ -1004,18 +1264,9 @@
             isGuest: _isGuest(),
             intervalTimers: State.intervalTimers.length,
             processedMsgs: State.processedMsgs.size,
-            pmAlertDedup: Object.keys(State.pmAlertDedup).length
+            pmAlertDedup: Object.keys(State.pmAlertDedup).length,
+            botProfilesReady: State.botProfilesReady
         };
-    }
-
-    /* ══════════════════════════════════════════════ */
-    /* Public API: reload memory                       */
-    /* ══════════════════════════════════════════════ */
-    function reloadMemory() {
-        return loadMemory().then(function () {
-            _emit('bot-commands:memoryReloaded', {});
-            return { ok: true };
-        });
     }
 
     /* ══════════════════════════════════════════════ */
@@ -1032,21 +1283,14 @@
             if (window.EventBus) {
                 window.EventBus.on('bots:incoming', _onIncoming);
                 window.EventBus.on('bot:message', _onIncoming);
+                window.EventBus.on('room:changed', _onRoomChanged);
             }
 
-            // خطافات pm
             _installPmHooks();
-
-            // مستمع النقل القسري
             _installForcedListener();
-
-            // مراقبة دخول الاستديو
-            _startPresenceListener();
-
-            // مهام دورية
             _startPeriodicTasks();
 
-            // استمع لتغيير الرتب (لرسائل النظام)
+            // استمع لتغيير الرتب (رسائل النظام — بعد ثانية)
             if (window.QamarRanks && window.QamarRanks.onRankChange) {
                 window.QamarRanks.onRankChange(function (payload) {
                     if (payload.action === 'promote' || payload.action === 'demote' ||
@@ -1059,7 +1303,28 @@
                 });
             }
 
-            Logger.info('✅ [bot-commands] ready | bad:', State.badWords.length, 'kick:', State.kickWords.length);
+            // إنشاء بروفايلات البوتات (King only)
+            if (_isKing()) {
+                setTimeout(function () {
+                    ensureBotProfiles().catch(function () {});
+                }, 2000);
+            }
+
+            // الملك يسجّل عند دخوله
+            if (window.QamarAuth && window.QamarAuth.onAuthChange) {
+                window.QamarAuth.onAuthChange(function (p) {
+                    if (p.isLoggedIn && _isKing() && !State.botProfilesReady) {
+                        setTimeout(function () {
+                            ensureBotProfiles().catch(function () {});
+                        }, 2000);
+                    }
+                });
+            }
+
+            // تحديث lastRoom الحالي
+            State.lastRoom = _getCurrentRoom();
+
+            Logger.info('✅ [bot-commands] ready');
             _emit('bot-commands:ready', getStatus());
         }).catch(function (e) {
             Logger.error('boot failed:', e.message);
@@ -1079,12 +1344,14 @@
     /* ══════════════════════════════════════════════ */
     window.QamarBotCommands = {
         CONFIG: CONFIG,
+        SYSTEM_MESSAGES: SYSTEM_MESSAGES,
+        BOT_SVGS: BOT_SVGS,
 
         reloadMemory: reloadMemory,
-
+        ensureBotProfiles: ensureBotProfiles,
         notify: notify,
 
-        // Debug/testing
+        // Testing
         testMatch: function (text) {
             return {
                 kick: _matchWord(text, State.kickWords),
