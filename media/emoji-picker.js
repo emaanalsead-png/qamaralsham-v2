@@ -1,14 +1,14 @@
 /* ============================================================
    🌙 قمر الشام — media/emoji-picker.js
-   Version: 1.0
+   Version: 2.0 — listens to emoji:open, does NOT hook button
    ============================================================ */
 (function () {
   'use strict';
   if (window.QamarEmoji) return;
 
-  var VERSION = '1.0';
+  var VERSION = '2.0';
   var PANEL_ID = 'qamar-emoji-picker';
-  var St = { inited: false, currentInput: null, recent: [], tab: 'smileys' };
+  var St = { inited: false, tab: 'smileys' };
 
   var CATEGORIES = {
     smileys: {
@@ -33,11 +33,11 @@
     },
     objects: {
       icon: '⚽', name: 'أشياء',
-      items: ('⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🏑 🥍 🏏 🥅 ⛳ 🪁 🏹 🎣 🤿 🥊 🥋 🎽 🛹 🛼 🛴 🚲 🛵 🏍 🛺 🚗 🚕 🚙 🚌 🚎 🏎 🚓 🚑 🚒 🚐 🛻 🚚 🚛 🚜 🦯 🦽 🦼 🛺 🚲 🛴 🛹 🚨 🚔 🚍 🚘 🚖 🚡 🚠 🚟 🚃 🚋 🚞 🚝 🚄 🚅 🚈 🚂 🚆 🚇 🚊 🚉 ✈️ 🛫 🛬 🛩 💺 🛰 🚀 🛸 🚁 🛶 ⛵ 🚤 🛥 🛳 ⛴ 🚢 ⚓ ⛽ 🚧 🚦 🚥 🚏 🗺 🗿 🗽 🗼 🏰 🏯 🏟 🎡 🎢 🎠 ⛲ ⛱ 🏖 🏝 🏜 🌋 ⛰ 🏔 🗻 🏕 ⛺ 🏠 🏡 🏘 🏚 🏗 🏭 🏢 🏬 🏣 🏤 🏥 🏦 🏨 🏪 🏫 🏩 💒 🏛 ⛪ 🕌 🕍 🛕 🕋 ⛩ 🛤 🛣 🗾 🎑 🏞 🌅 🌄 🌠 🎇 🎆 🌇 🌆 🏙 🌃 🌌 🌉 🌁').split(' ')
+      items: ('⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🏑 🥍 🏏 🥅 ⛳ 🪁 🏹 🎣 🤿 🥊 🥋 🎽 🛹 🛼 🛴 🚲 🛵 🏍 🛺 🚗 🚕 🚙 🚌 🚎 🏎 🚓 🚑 🚒 🚐 🛻 🚚 🚛 🚜 🦯 🦽 🦼 🚨 🚔 🚍 🚘 🚖 🚡 🚠 🚟 🚃 🚋 🚞 🚝 🚄 🚅 🚈 🚂 🚆 🚇 🚊 🚉 ✈️ 🛫 🛬 🛩 💺 🛰 🚀 🛸 🚁 🛶 ⛵ 🚤 🛥 🛳 ⛴ 🚢 ⚓ ⛽ 🚧 🚦 🚥 🚏 🗺 🗿 🗽 🗼 🏰 🏯 🏟 🎡 🎢 🎠 ⛲ ⛱ 🏖 🏝 🏜 🌋 ⛰ 🏔 🗻 🏕 ⛺ 🏠 🏡 🏘 🏚 🏗 🏭 🏢 🏬 🏣 🏤 🏥 🏦 🏨 🏪 🏫 🏩 💒 🏛 ⛪ 🕌 🕍 🛕 🕋 ⛩ 🛤 🛣 🗾 🎑 🏞 🌅 🌄 🌠 🎇 🎆 🌇 🌆 🏙 🌃 🌌 🌉 🌁').split(' ')
     },
     symbols: {
       icon: '✨', name: 'رموز',
-      items: ('✨ ⭐ 🌟 💫 ⚡ 🔥 💧 🌊 🌙 ☀️ ⛅ ☁️ 🌤 🌦 🌧 ⛈ 🌩 🌨 ❄️ ☃️ ⛄ 🌬 💨 🌪 🌫 🌈 ☂️ ☔ 💐 🌸 💮 🏵 🌹 🥀 🌺 🌻 🌼 🌷 🌱 🌲 🌳 🌴 🌵 🌾 🌿 ☘️ 🍀 🍁 🍂 🍃 🍄 🌰 🎋 🎍 🎎 🎏 🎐 🎀 🎁 🎗 🎟 🎫 🎖 🏆 🏅 🥇 🥈 🥉 ⚽ ⚾ 🏀 🏐 🏈 🏉 🎾 🥎 🏐 🎱 🏏 🏑 🏒 🥍 🏓 🏸 🥅 ⛳ 🪁 🏹 🎣 🤿 🥊 🥋 🎽 🛹 🛼 🛴 🚲 🛵 🏍 🛺 🚗 🚕 🚙').split(' ')
+      items: ('✨ ⭐ 🌟 💫 ⚡ 🔥 💧 🌊 🌙 ☀️ ⛅ ☁️ 🌤 🌦 🌧 ⛈ 🌩 🌨 ❄️ ☃️ ⛄ 🌬 💨 🌪 🌫 🌈 ☂️ ☔ 💐 🌸 💮 🏵 🌹 🥀 🌺 🌻 🌼 🌷 🌱 🌲 🌳 🌴 🌵 🌾 🌿 ☘️ 🍀 🍁 🍂 🍃 🍄 🌰 🎋 🎍 🎎 🎏 🎐 🎀 🎁 🎗 🎟 🎫 🎖 🏆 🏅 🥇 🥈 🥉').split(' ')
     },
     flags: {
       icon: '🏁', name: 'أعلام',
@@ -53,13 +53,12 @@
 
     p = document.createElement('div');
     p.id = PANEL_ID;
-    p.className = 'qamar-emoji-panel';
     p.style.cssText =
       'position:fixed;bottom:80px;left:10px;right:10px;max-width:400px;' +
       'margin:0 auto;background:#0a0616;border:1px solid rgba(212,175,55,.35);' +
       'border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.8);' +
-      'z-index:9000;display:none;flex-direction:column;' +
-      'max-height:60vh;direction:rtl;font-family:inherit';
+      'z-index:9000;display:none;flex-direction:column;max-height:60vh;' +
+      'direction:rtl;font-family:inherit';
 
     p.innerHTML =
       '<div id="qep-tabs" style="display:flex;gap:4px;padding:8px;' +
@@ -73,31 +72,24 @@
       var cat = CATEGORIES[key];
       var btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'qep-tab';
       btn.setAttribute('data-cat', key);
       btn.style.cssText =
         'flex:0 0 auto;padding:8px 12px;border-radius:10px;' +
         'background:transparent;border:1px solid transparent;' +
         'font-size:20px;cursor:pointer;font-family:inherit';
       btn.textContent = cat.icon;
-      btn.setAttribute('title', cat.name);
+      btn.title = cat.name;
+      btn.addEventListener('click', function () {
+        St.tab = key;
+        renderCategory(key);
+      });
       tabs.appendChild(btn);
     });
 
-    tabs.addEventListener('click', function (e) {
-      var b = e.target.closest('.qep-tab');
-      if (!b) return;
-      var cat = b.getAttribute('data-cat');
-      if (!cat) return;
-      St.tab = cat;
-      renderCategory(cat);
-    });
-
     p.querySelector('#qep-body').addEventListener('click', function (e) {
-      var btn = e.target.closest('.qep-emoji');
+      var btn = e.target.closest && e.target.closest('.qep-emoji');
       if (!btn) return;
-      var emoji = btn.getAttribute('data-emoji');
-      insertEmoji(emoji);
+      insertEmoji(btn.getAttribute('data-emoji'));
     });
 
     return p;
@@ -109,10 +101,10 @@
     var c = CATEGORIES[cat];
     if (!c || !body) return;
 
-    panel.querySelectorAll('.qep-tab').forEach(function (b) {
-      var isActive = b.getAttribute('data-cat') === cat;
-      b.style.background = isActive ? 'rgba(212,175,55,.15)' : 'transparent';
-      b.style.borderColor = isActive ? 'rgba(212,175,55,.5)' : 'transparent';
+    panel.querySelectorAll('#qep-tabs button').forEach(function (b) {
+      var active = b.getAttribute('data-cat') === cat;
+      b.style.background = active ? 'rgba(212,175,55,.15)' : 'transparent';
+      b.style.borderColor = active ? 'rgba(212,175,55,.5)' : 'transparent';
     });
 
     var html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px">';
@@ -122,12 +114,11 @@
         'border-radius:8px;cursor:pointer;font-family:inherit;line-height:1">' + em + '</button>';
     });
     html += '</div>';
-
     body.innerHTML = html;
   }
 
   function insertEmoji(emoji) {
-    var input = St.currentInput || $id('message-input');
+    var input = $id('message-input');
     if (!input) return;
 
     var start = input.selectionStart != null ? input.selectionStart : input.value.length;
@@ -135,24 +126,12 @@
     var val = input.value || '';
     input.value = val.slice(0, start) + emoji + val.slice(end);
     input.selectionStart = input.selectionEnd = start + emoji.length;
-    input.focus();
-
-    try {
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    } catch (e) {}
-
-    addRecent(emoji);
+    try { input.focus(); } catch (e) {}
+    try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
   }
 
-  function addRecent(emoji) {
-    St.recent = St.recent.filter(function (e) { return e !== emoji; });
-    St.recent.unshift(emoji);
-    if (St.recent.length > 16) St.recent.length = 16;
-  }
-
-  function toggle(forceInput) {
+  function toggle() {
     var p = ensurePanel();
-    if (forceInput) St.currentInput = forceInput;
     if (p.style.display === 'flex') {
       p.style.display = 'none';
       return false;
@@ -167,45 +146,40 @@
     if (p) p.style.display = 'none';
   }
 
-  function attachTo(inputEl, buttonEl) {
-    if (!inputEl || !buttonEl) return;
-    if (buttonEl.dataset.qepHooked) return;
-    buttonEl.dataset.qepHooked = '1';
-    buttonEl.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      toggle(inputEl);
-    });
-  }
-
   function init() {
     if (St.inited) return;
     St.inited = true;
 
     ensurePanel();
 
-    var emojiBtn = $id('emoji-btn');
-    var input = $id('message-input');
-    if (emojiBtn && input) attachTo(input, emojiBtn);
+    try {
+      if (window.EventBus && typeof window.EventBus.on === 'function') {
+        window.EventBus.on('emoji:open', function () { toggle(); });
+        window.EventBus.on('emoji:close', function () { close(); });
+      }
+    } catch (e) {}
 
+    // Click outside to close
     document.addEventListener('click', function (e) {
       var p = $id(PANEL_ID);
       if (!p || p.style.display !== 'flex') return;
       if (p.contains(e.target)) return;
       if (e.target.closest && e.target.closest('#emoji-btn')) return;
+      if (e.target.closest && e.target.closest('[data-tool="emoji"]')) return;
       close();
     });
 
-    console.log('[emoji] v' + VERSION + ' ready');
+    console.log('[emoji-picker] v' + VERSION + ' ready');
   }
 
   window.QamarEmoji = {
     version: VERSION,
-    toggle: toggle,
+    open: function () { toggle(); },
     close: close,
-    attach: attachTo,
+    toggle: toggle,
     insert: insertEmoji,
-    categories: CATEGORIES
+    categories: CATEGORIES,
+    init: init
   };
 
   if (document.readyState === 'loading') {
