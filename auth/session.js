@@ -1,9 +1,10 @@
 // ==============================================
-// auth/session.js
-// Session persistence + restoration (24h TTL)
+// auth/session.js v2.1 — force refresh from Firebase
 // ==============================================
 // يعتمد على: firebase.js + utils.js + auth.js
 // يعطي: window.QamarSession
+// ==============================================
+// ⭐ v2.1: يجبر قراءة rank/rankLevel من Firebase عند الدخول
 // ==============================================
 
 (function () {
@@ -22,41 +23,33 @@
         error: function () { console.error.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); }
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* Config                                          */
-    /* ══════════════════════════════════════════════ */
     const CONFIG = {
         STORAGE_KEY: 'qamar_session_v2',
-        TTL_MS: 24 * 60 * 60 * 1000,      // 24 ساعة
-        CHECK_INTERVAL_MS: 60 * 1000,     // فحص كل دقيقة
-        TOUCH_INTERVAL_MS: 2 * 60 * 1000, // حدّث النشاط كل دقيقتين
+        TTL_MS: 24 * 60 * 60 * 1000,
+        CHECK_INTERVAL_MS: 60 * 1000,
+        TOUCH_INTERVAL_MS: 2 * 60 * 1000,
+        SYNC_DELAY_MS: 1500,
         VERSION: 1
     };
 
-    // الحقول التي تُحفظ
     const PERSONAL_FIELDS = [
         'uid', 'name', 'code', 'avatar',
         'rank', 'rankLevel', 'isGuest', 'isEmailUser',
         'email', 'country', 'family', 'gender', 'age'
     ];
 
-    /* ══════════════════════════════════════════════ */
-    /* State                                           */
-    /* ══════════════════════════════════════════════ */
     const State = {
-        data: null,             // الجلسة الحالية
+        data: null,
         lastSaved: 0,
         lastTouched: 0,
         lastCheck: 0,
         checkTimer: null,
         touchTimer: null,
+        syncTimer: null,
         listeners: [],
         _started: false
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* Listeners (محلي)                                */
-    /* ══════════════════════════════════════════════ */
     function onSessionChange(cb) {
         if (typeof cb !== 'function') return function () {};
         State.listeners.push(cb);
@@ -66,11 +59,9 @@
     }
 
     function _emit(eventName, payload) {
-        // EventBus العام
         if (window.EventBus) {
             try { window.EventBus.emit(eventName, payload); } catch (e) {}
         }
-        // المستمعون المحليون (لأحداث الجلسة فقط)
         if (eventName === 'session:changed') {
             State.listeners.slice().forEach(function (cb) {
                 try { cb(payload); } catch (e) { Logger.warn('listener error:', e); }
@@ -78,21 +69,17 @@
         }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Build session object from current user          */
-    /* ══════════════════════════════════════════════ */
     function _buildSession(user) {
         if (!user) return null;
         const now = Date.now();
         const isGuest = !!user.isAnonymous;
         const isEmailUser = !isGuest && !!user.email;
-
-        // اقرأ بيانات إضافية من AppState (إن وُجدت)
         const appUser = (window.AppState && window.AppState.user) ? window.AppState.user : {};
+        const prev = State.data || {};
 
         const session = {
             _v: CONFIG.VERSION,
-            signedInAt: State.data && State.data.signedInAt ? State.data.signedInAt : now,
+            signedInAt: prev.signedInAt || now,
             lastActiveAt: now,
             expiresAt: now + CONFIG.TTL_MS
         };
@@ -105,48 +92,40 @@
             } else if (f === 'isEmailUser') {
                 session.isEmailUser = isEmailUser;
             } else if (f === 'email') {
-                session.email = user.email || null;
+                session.email = user.email || prev.email || null;
             } else if (f === 'name') {
-                session.name = user.displayName || appUser.name || null;
+                session.name = user.displayName || appUser.name || prev.name || null;
             } else {
-                session[f] = appUser[f] !== undefined ? appUser[f] : null;
+                // ⭐ v2.1: احتفظ بالقيمة القديمة إذا الجديدة فارغة
+                var nv = appUser[f];
+                var ov = prev[f];
+                if (nv !== undefined && nv !== null) session[f] = nv;
+                else if (ov !== undefined && ov !== null) session[f] = ov;
+                else session[f] = null;
             }
         });
 
         return session;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Save session                                    */
-    /* ══════════════════════════════════════════════ */
     function saveSession(userOrSession) {
         try {
             let session;
             if (userOrSession && userOrSession.uid && !userOrSession._v) {
-                // هذا user → ابنِ الجلسة
                 session = _buildSession(userOrSession);
             } else if (userOrSession && userOrSession._v) {
-                // هذا session جاهز
                 session = userOrSession;
             } else if (userOrSession === undefined) {
-                // استخدم الحالي من auth
                 const u = (window.QamarAuth && window.QamarAuth.getCurrentUser)
                     ? window.QamarAuth.getCurrentUser()
                     : (window.auth ? window.auth.currentUser : null);
-                if (!u) {
-                    Logger.warn('saveSession: no current user');
-                    return false;
-                }
+                if (!u) return false;
                 session = _buildSession(u);
             } else {
-                Logger.warn('saveSession: invalid input');
                 return false;
             }
 
-            if (!session || !session.uid) {
-                Logger.warn('saveSession: session has no uid');
-                return false;
-            }
+            if (!session || !session.uid) return false;
 
             State.data = session;
             State.lastSaved = Date.now();
@@ -157,20 +136,16 @@
                 localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(session));
             }
 
-            Logger.info('💾 Session saved: uid=' + session.uid.substring(0, 8) + '... (TTL: 24h)');
+            Logger.info('💾 Session saved: uid=' + session.uid.substring(0, 8) + '... rank=' + session.rank);
             _emit('session:saved', session);
             _emit('session:changed', { action: 'saved', session: session });
             return true;
-
         } catch (e) {
             Logger.error('saveSession error:', e);
             return false;
         }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Load session (من localStorage فقط)              */
-    /* ══════════════════════════════════════════════ */
     function loadSession() {
         try {
             let data;
@@ -181,10 +156,7 @@
                 data = raw ? JSON.parse(raw) : null;
             }
 
-            if (!data || !data.uid) {
-                Logger.debug('No saved session');
-                return null;
-            }
+            if (!data || !data.uid) return null;
 
             if (data._v !== CONFIG.VERSION) {
                 Logger.warn('Session version mismatch — clearing');
@@ -200,18 +172,14 @@
             }
 
             State.data = data;
-            Logger.info('📂 Session loaded from storage: uid=' + data.uid.substring(0, 8) + '...');
+            Logger.info('📂 Session loaded: uid=' + data.uid.substring(0, 8) + '... rank=' + data.rank);
             return data;
-
         } catch (e) {
             Logger.error('loadSession error:', e);
             return null;
         }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Check expiration                                */
-    /* ══════════════════════════════════════════════ */
     function isSessionExpired(sessionData) {
         const s = sessionData || State.data;
         if (!s || !s.expiresAt) return true;
@@ -233,27 +201,17 @@
         return Math.max(0, State.data.expiresAt - Date.now());
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Restore session (مع التحقق من Firebase)         */
-    /* ══════════════════════════════════════════════ */
     function restoreSession() {
         const s = loadSession();
-        if (!s) {
-            return Promise.resolve({ restored: false, reason: 'no-session' });
-        }
+        if (!s) return Promise.resolve({ restored: false, reason: 'no-session' });
 
-        // طابق UID مع firebase.auth الحالي
         const currentUid = window.auth && window.auth.currentUser ? window.auth.currentUser.uid : null;
 
         if (!currentUid) {
-            // Firebase لم يجهز بعد — انتظر قليلاً
-            Logger.debug('restoreSession: waiting for auth...');
             return (window.QamarAuth && window.QamarAuth.waitForAuth
                 ? window.QamarAuth.waitForAuth(5000)
                 : Promise.resolve()
-            ).then(function () {
-                return _verifyWithFirebase(s);
-            });
+            ).then(function () { return _verifyWithFirebase(s); });
         }
 
         return _verifyWithFirebase(s);
@@ -263,63 +221,46 @@
         const currentUid = window.auth && window.auth.currentUser ? window.auth.currentUser.uid : null;
 
         if (!currentUid) {
-            Logger.warn('restoreSession: no auth user — session saved but not active');
             return { restored: false, reason: 'no-auth', session: sessionData };
         }
 
         if (currentUid !== sessionData.uid) {
-            Logger.warn('restoreSession: UID mismatch — saving fresh session');
-            // المستخدم تغيّر → احفظ الجلسة الجديدة
             const u = window.auth.currentUser;
             saveSession(u);
+            // ⭐ v2.1: بعد الحفظ، جدّد من Firebase
+            setTimeout(syncWithFirebase, CONFIG.SYNC_DELAY_MS);
             return { restored: false, reason: 'uid-mismatch', freshSaved: true };
         }
 
-        // UID متطابق — الجلسة صالحة
-        Logger.info('✅ Session restored successfully');
+        Logger.info('✅ Session restored');
         _emit('session:restored', sessionData);
         _emit('session:changed', { action: 'restored', session: sessionData });
         return { restored: true, session: sessionData };
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Clear session                                   */
-    /* ══════════════════════════════════════════════ */
     function clearSession() {
         try {
             State.data = null;
             State.lastSaved = 0;
             State.lastTouched = 0;
-
-            if (window.localStorage) {
-                localStorage.removeItem(CONFIG.STORAGE_KEY);
-            }
-
+            if (window.localStorage) localStorage.removeItem(CONFIG.STORAGE_KEY);
             Logger.info('🗑️ Session cleared');
             _emit('session:cleared');
             _emit('session:changed', { action: 'cleared' });
             return true;
-        } catch (e) {
-            Logger.error('clearSession error:', e);
-            return false;
-        }
+        } catch (e) { return false; }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Update session (partial)                        */
-    /* ══════════════════════════════════════════════ */
     function updateSession(updates) {
         if (!updates || typeof updates !== 'object') return false;
         if (!State.data) {
-            // لا جلسة → ابنِ واحدة
             const u = window.auth ? window.auth.currentUser : null;
             if (u) saveSession(u);
             if (!State.data) return false;
         }
 
-        // دمج الحقول المسموحة فقط
         PERSONAL_FIELDS.forEach(function (f) {
-            if (updates[f] !== undefined) {
+            if (updates[f] !== undefined && updates[f] !== null) {
                 State.data[f] = updates[f];
             }
         });
@@ -327,52 +268,35 @@
         State.data.lastActiveAt = Date.now();
         State.lastSaved = Date.now();
 
-        if (window.safeSetJSON) {
-            window.safeSetJSON(CONFIG.STORAGE_KEY, State.data);
-        } else {
-            localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(State.data));
-        }
+        try {
+            if (window.safeSetJSON) window.safeSetJSON(CONFIG.STORAGE_KEY, State.data);
+            else localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(State.data));
+        } catch (e) {}
 
-        Logger.debug('🔄 Session updated');
         _emit('session:changed', { action: 'updated', session: State.data });
         return true;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Touch (update lastActiveAt)                     */
-    /* ══════════════════════════════════════════════ */
     function touchSession() {
         if (!State.data) return false;
         const now = Date.now();
         if (now - State.lastTouched < CONFIG.TOUCH_INTERVAL_MS) return false;
-
         State.lastTouched = now;
         State.data.lastActiveAt = now;
-        // لا نمدد expiresAt — 24 ساعة من signedInAt فقط
-
         try {
-            if (window.safeSetJSON) {
-                window.safeSetJSON(CONFIG.STORAGE_KEY, State.data);
-            } else {
-                localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(State.data));
-            }
+            if (window.safeSetJSON) window.safeSetJSON(CONFIG.STORAGE_KEY, State.data);
+            else localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(State.data));
         } catch (e) {}
-
         return true;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Sync with Firebase (المستخدم الحي)              */
-    /* ══════════════════════════════════════════════ */
+    // ⭐ v2.1: المهم — syncWithFirebase مع كشف التغيير
     function syncWithFirebase() {
         const u = window.auth ? window.auth.currentUser : null;
         if (!u) return Promise.resolve({ synced: false, reason: 'no-user' });
 
         return window.QamarFB.get('users/' + u.uid).then(function (data) {
-            if (!data) {
-                Logger.debug('syncWithFirebase: no DB user yet');
-                return { synced: false, reason: 'no-db-user' };
-            }
+            if (!data) return { synced: false, reason: 'no-db-user' };
 
             const updates = {
                 name: data.name || null,
@@ -386,26 +310,36 @@
                 age: data.age || null
             };
 
+            // افحص التغيير
+            const oldRank = State.data ? State.data.rank : null;
+            const newRank = updates.rank;
+
             updateSession(updates);
-            Logger.info('✅ Session synced with Firebase DB');
-            return { synced: true, updates: updates };
+            Logger.info('✅ Session synced: rank=' + newRank + ' (was ' + oldRank + ')');
+
+            // ⭐ إذا تغيرت الرتبة → أخبر الجميع
+            if (oldRank !== newRank) {
+                Logger.info('🔄 RANK CHANGED: ' + oldRank + ' → ' + newRank);
+                _emit('session:rankChanged', { old: oldRank, new: newRank, rankLevel: updates.rankLevel });
+                if (window.EventBus) {
+                    try { window.EventBus.emit('rank:changed', { uid: u.uid, rank: newRank, level: updates.rankLevel }); } catch (e) {}
+                }
+            }
+
+            return { synced: true, updates: updates, rankChanged: oldRank !== newRank };
         }).catch(function (e) {
             Logger.warn('syncWithFirebase error:', e.message);
             return { synced: false, reason: e.message };
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Expiration checker (background)                 */
-    /* ══════════════════════════════════════════════ */
     function _startChecker() {
         if (State.checkTimer) return;
         State.checkTimer = setInterval(function () {
             State.lastCheck = Date.now();
             if (!State.data) return;
-
             if (isSessionExpired(State.data)) {
-                Logger.warn('⏰ Session expired — signing out');
+                Logger.warn('⏰ Session expired');
                 _handleExpired();
             }
         }, CONFIG.CHECK_INTERVAL_MS);
@@ -421,27 +355,19 @@
     function _handleExpired() {
         _emit('session:expired', State.data);
         clearSession();
-
-        // سجّل خروج
         if (window.QamarAuth && window.QamarAuth.signOut) {
-            window.QamarAuth.signOut().catch(function (e) {
-                Logger.warn('auto signOut after expiry failed:', e.message);
-            });
+            window.QamarAuth.signOut().catch(function () {});
         } else if (window.auth) {
             window.auth.signOut().catch(function () {});
         }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Touch on activity                               */
-    /* ══════════════════════════════════════════════ */
     function _startActivityTracker() {
         if (State.touchTimer) return;
         State.touchTimer = setInterval(function () {
             if (State.data) touchSession();
         }, CONFIG.TOUCH_INTERVAL_MS);
 
-        // أحداث المستخدم
         if (typeof document !== 'undefined') {
             ['click', 'keydown', 'touchstart'].forEach(function (ev) {
                 document.addEventListener(ev, function () {
@@ -451,45 +377,46 @@
         }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Start / Stop                                    */
-    /* ══════════════════════════════════════════════ */
+    // ⭐ v2.1: أهم تعديل — Force refresh عند الدخول
     function start() {
         if (State._started) return;
         State._started = true;
 
-        // اربط مع auth إذا متاح
         if (window.QamarAuth && window.QamarAuth.onAuthChange) {
             window.QamarAuth.onAuthChange(function (payload) {
                 if (payload.isLoggedIn) {
-                    // جدّد الجلسة عند تسجيل الدخول
                     saveSession(payload.user);
+                    // ⭐ اجبر قراءة Firebase بعد لحظة
+                    if (State.syncTimer) clearTimeout(State.syncTimer);
+                    State.syncTimer = setTimeout(function () {
+                        syncWithFirebase();
+                    }, CONFIG.SYNC_DELAY_MS);
                 } else {
-                    // مسح عند الخروج
                     clearSession();
                 }
             });
         }
 
+        // ⭐ إذا كان هناك جلسة موجودة + auth → جدّد فوراً
+        if (State.data && window.auth && window.auth.currentUser) {
+            if (State.syncTimer) clearTimeout(State.syncTimer);
+            State.syncTimer = setTimeout(function () {
+                syncWithFirebase();
+            }, CONFIG.SYNC_DELAY_MS);
+        }
+
         _startChecker();
         _startActivityTracker();
-
-        Logger.info('📦 [session.js] started');
+        Logger.info('📦 [session.js v2.1] started');
     }
 
     function stop() {
         _stopChecker();
-        if (State.touchTimer) {
-            clearInterval(State.touchTimer);
-            State.touchTimer = null;
-        }
+        if (State.touchTimer) { clearInterval(State.touchTimer); State.touchTimer = null; }
+        if (State.syncTimer) { clearTimeout(State.syncTimer); State.syncTimer = null; }
         State._started = false;
-        Logger.info('Stopped');
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Status / Debug                                  */
-    /* ══════════════════════════════════════════════ */
     function getStatus() {
         return {
             hasSession: !!State.data,
@@ -497,6 +424,7 @@
             isGuest: State.data ? !!State.data.isGuest : null,
             name: State.data ? State.data.name : null,
             rank: State.data ? State.data.rank : null,
+            rankLevel: State.data ? State.data.rankLevel : null,
             ageMs: getSessionAge(),
             remainingMs: getRemainingMs(),
             expired: State.data ? isSessionExpired(State.data) : null,
@@ -507,57 +435,34 @@
         };
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Exports                                         */
-    /* ══════════════════════════════════════════════ */
     const QamarSession = {
-        // Core
         saveSession: saveSession,
         loadSession: loadSession,
         restoreSession: restoreSession,
         clearSession: clearSession,
         updateSession: updateSession,
         touchSession: touchSession,
-
-        // Checks
         isSessionExpired: isSessionExpired,
         isSessionValid: isSessionValid,
         getSessionAge: getSessionAge,
         getRemainingMs: getRemainingMs,
-
-        // Sync
         syncWithFirebase: syncWithFirebase,
-
-        // Data
         getData: function () { return State.data; },
-
-        // Events
         onSessionChange: onSessionChange,
-
-        // Lifecycle
         start: start,
         stop: stop,
-
-        // Debug
         getStatus: getStatus,
-
-        // Config
         CONFIG: CONFIG
     };
 
     window.QamarSession = QamarSession;
-
-    // سجّل loadSession على window (يستخدمها boot.js)
     window.loadSession = loadSession;
 
-    // ابدأ تلقائياً
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () {
-            setTimeout(start, 100);
-        });
+        document.addEventListener('DOMContentLoaded', function () { setTimeout(start, 100); });
     } else {
         setTimeout(start, 100);
     }
 
-    Logger.info('📦 [session.js] loaded');
+    Logger.info('📦 [session.js v2.1] loaded');
 })();
