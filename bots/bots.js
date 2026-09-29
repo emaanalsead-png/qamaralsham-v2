@@ -114,11 +114,9 @@
         configs: {},
         lastSentAt: {},
         lastSentText: {},
-        _statsCache: {},
         instanceId: 'bot_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8),
         initialized: false,
-        listeners: [],
-        _bootAt: Date.now()
+        listeners: []
     };
 
     /* ══════════════════════════════════════════════ */
@@ -151,8 +149,13 @@
 
     function _getCurrentRoom() {
         if (window.AppState && window.AppState.currentRoom) return window.AppState.currentRoom;
-        if (window.QamarRooms && window.QamarRooms.getCurrent) return window.QamarRooms.getCurrent();
-        return null;
+        if (window.QamarRooms && window.QamarRooms.getCurrent) {
+            const r = window.QamarRooms.getCurrent();
+            if (r) return r;
+        }
+        try {
+            return localStorage.getItem('qamar_last_room') || null;
+        } catch (e) { return null; }
     }
 
     function _isKing() {
@@ -167,7 +170,7 @@
 
     function _sanitizeText(text) {
         if (!text) return '';
-        return String(text).substring(0, CONFIG.MAX_TEXT_LENGTH).trim();
+        return String(text).trim().substring(0, CONFIG.MAX_TEXT_LENGTH);
     }
 
     function _now() { return Date.now(); }
@@ -179,34 +182,29 @@
         if (State.initialized) return Promise.resolve(true);
 
         return window.QamarFB.get(CONFIG.CONFIG_ROOT).then(function (data) {
-            const stored = data || {};
-            Object.keys(BOT_DEFS).forEach(function (botId) {
-                const def = BOT_DEFS[botId];
-                const s = stored[botId] || {};
-                State.configs[botId] = {
-                    enabled: s.enabled !== undefined ? !!s.enabled : true,
-                    rateMs: Number(s.rateMs) || def.defaultRateMs,
-                    cooldownMs: Number(s.cooldownMs) || def.defaultCooldownMs,
-                    allowedRooms: s.allowedRooms || def.allowedRooms
-                };
-            });
+            _applyConfigs(data || {});
             State.initialized = true;
             Logger.info('✅ Bots initialized:', Object.keys(BOT_DEFS).length);
             _emit('bots:ready', { bots: Object.keys(BOT_DEFS) });
             return true;
         }).catch(function (e) {
             Logger.warn('initBots error — using defaults:', e.message);
-            Object.keys(BOT_DEFS).forEach(function (botId) {
-                const def = BOT_DEFS[botId];
-                State.configs[botId] = {
-                    enabled: true,
-                    rateMs: def.defaultRateMs,
-                    cooldownMs: def.defaultCooldownMs,
-                    allowedRooms: def.allowedRooms
-                };
-            });
+            _applyConfigs({});
             State.initialized = true;
             return true;
+        });
+    }
+
+    function _applyConfigs(stored) {
+        Object.keys(BOT_DEFS).forEach(function (botId) {
+            const def = BOT_DEFS[botId];
+            const s = stored[botId] || {};
+            State.configs[botId] = {
+                enabled: s.enabled !== undefined ? !!s.enabled : true,
+                rateMs: Number(s.rateMs) || def.defaultRateMs,
+                cooldownMs: Number(s.cooldownMs) || def.defaultCooldownMs,
+                allowedRooms: Array.isArray(s.allowedRooms) ? s.allowedRooms : def.allowedRooms
+            };
         });
     }
 
@@ -220,7 +218,8 @@
         return Object.assign({}, def, {
             enabled: cfg.enabled !== false,
             rateMs: cfg.rateMs || def.defaultRateMs,
-            cooldownMs: cfg.cooldownMs || def.defaultCooldownMs
+            cooldownMs: cfg.cooldownMs || def.defaultCooldownMs,
+            allowedRooms: cfg.allowedRooms || def.allowedRooms
         });
     }
 
@@ -277,7 +276,7 @@
     /* ══════════════════════════════════════════════ */
     /* Rate + Cooldown                                 */
     /* ══════════════════════════════════════════════ */
-    function _checkRate(botId) {
+    function _checkLocalRate(botId) {
         const cfg = State.configs[botId];
         if (!cfg) return false;
         const last = State.lastSentAt[botId] || 0;
@@ -296,6 +295,18 @@
         return true;
     }
 
+    // ⭐ v2: فحص Rate على السيرفر (لمنع تبويبين)
+    function _checkRemoteRate(botId) {
+        const cfg = State.configs[botId];
+        if (!cfg) return Promise.resolve(true);
+        return window.QamarFB.get(CONFIG.LOCK_ROOT + '/' + botId + '/stats/lastActive')
+            .then(function (remote) {
+                if (!remote || typeof remote !== 'number') return true;
+                return (_now() - remote) >= (cfg.rateMs || CONFIG.DEFAULT_RATE_MS);
+            })
+            .catch(function () { return true; });
+    }
+
     /* ══════════════════════════════════════════════ */
     /* botSpeak                                        */
     /* ══════════════════════════════════════════════ */
@@ -307,40 +318,46 @@
             if (!roomId) throw new Error('roomId مطلوب');
             if (!text) throw new Error('النص فارغ');
 
-            if (!isBotEnabled(botId) && !options.force) {
-                return { skipped: 'disabled' };
-            }
-            if (!canWriteInRoom(botId, roomId) && !options.force) {
-                return { skipped: 'room-not-allowed' };
-            }
-            if (!_checkRate(botId) && !options.force) {
-                return { skipped: 'rate-limit' };
-            }
+            if (!isBotEnabled(botId) && !options.force) return { skipped: 'disabled' };
+            if (!canWriteInRoom(botId, roomId) && !options.force) return { skipped: 'room-not-allowed' };
+            if (!_checkLocalRate(botId) && !options.force) return { skipped: 'rate-local' };
 
             const cleanText = _sanitizeText(text);
-            if (!_checkCooldown(botId, cleanText) && !options.force) {
-                return { skipped: 'cooldown' };
-            }
+            if (!_checkCooldown(botId, cleanText) && !options.force) return { skipped: 'cooldown' };
 
             return _acquireLock(botId).then(function (ok) {
-                if (!ok && !options.force) {
-                    return { skipped: 'locked' };
-                }
+                if (!ok && !options.force) return { skipped: 'locked' };
 
-                const payload = _buildBotMessage(botId, roomId, cleanText, options);
+                // ⭐ v2: فحص Rate بعد القفل (لمنع تسرب تبويب ثانٍ)
+                const rateCheck = options.force
+                    ? Promise.resolve(true)
+                    : _checkRemoteRate(botId);
 
-                return window.QamarFB.push('room_messages/' + roomId, payload).then(function (msgId) {
-                    State.lastSentAt[botId] = _now();
-                    State.lastSentText[botId] = cleanText;
+                return rateCheck.then(function (canSend) {
+                    if (!canSend && !options.force) return { skipped: 'rate-remote' };
 
-                    window.QamarFB.update(CONFIG.LOCK_ROOT + '/' + botId + '/stats', {
-                        msgCount: (State._statsCache[botId] && State._statsCache[botId].msgCount || 0) + 1,
-                        lastActive: window.QamarFB.serverTime()
-                    }).catch(function () {});
+                    const payload = _buildBotMessage(botId, roomId, cleanText, options);
 
-                    _emit('bots:spoke', { botId: botId, roomId: roomId, msgId: msgId, text: cleanText });
-                    Logger.debug('🤖 Bot spoke:', botId, '→', roomId);
-                    return { ok: true, msgId: msgId };
+                    return window.QamarFB.push('room_messages/' + roomId, payload).then(function (msgId) {
+                        State.lastSentAt[botId] = _now();
+                        State.lastSentText[botId] = cleanText;
+
+                        // ⭐ v2: transaction لعدّاد صحيح
+                        window.QamarFB.transaction(
+                            CONFIG.LOCK_ROOT + '/' + botId + '/stats',
+                            function (cur) {
+                                cur = cur || {};
+                                return {
+                                    msgCount: (Number(cur.msgCount) || 0) + 1,
+                                    lastActive: _now()
+                                };
+                            }
+                        ).catch(function () {});
+
+                        _emit('bots:spoke', { botId: botId, roomId: roomId, msgId: msgId, text: cleanText });
+                        Logger.debug('🤖 Bot spoke:', botId, '→', roomId);
+                        return { ok: true, msgId: msgId };
+                    });
                 });
             }).then(function (r) {
                 return _releaseLock(botId).then(function () { return r; });
@@ -489,7 +506,9 @@
 
                 if (window.QamarAudit) {
                     window.QamarAudit.log('toggleBot', {
-                        reason: (value ? 'تشغيل/تعديل ' : 'إيقاف ') + BOT_DEFS[botId].name,
+                        reason: (field === 'enabled'
+                            ? (value ? 'تشغيل ' : 'إيقاف ') + BOT_DEFS[botId].name
+                            : 'تعديل ' + field + ' لـ ' + BOT_DEFS[botId].name),
                         details: { botId: botId, field: field, value: value }
                     });
                 }
@@ -503,18 +522,18 @@
 
     function setBotRate(botId, rateMs) {
         const v = Number(rateMs);
-        if (isNaN(v) || v < 500) throw new Error('قيمة غير صحيحة (الحد الأدنى 500ms)');
+        if (isNaN(v) || v < 500) return Promise.reject(new Error('قيمة غير صحيحة (الحد الأدنى 500ms)'));
         return _setBotField(botId, 'rateMs', v);
     }
 
     function setBotCooldown(botId, cooldownMs) {
         const v = Number(cooldownMs);
-        if (isNaN(v) || v < 1000) throw new Error('قيمة غير صحيحة (الحد الأدنى 1000ms)');
+        if (isNaN(v) || v < 1000) return Promise.reject(new Error('قيمة غير صحيحة (الحد الأدنى 1000ms)'));
         return _setBotField(botId, 'cooldownMs', v);
     }
 
     function setBotRooms(botId, allowedRooms) {
-        if (!Array.isArray(allowedRooms)) throw new Error('يجب أن تكون مصفوفة');
+        if (!Array.isArray(allowedRooms)) return Promise.reject(new Error('يجب أن تكون مصفوفة'));
         return _setBotField(botId, 'allowedRooms', allowedRooms);
     }
 
@@ -522,21 +541,9 @@
     /* Stats                                           */
     /* ══════════════════════════════════════════════ */
     function getStats() {
-        return window.QamarFB.get(CONFIG.LOCK_ROOT).then(function (data) {
-            return data || {};
-        }).catch(function () { return {}; });
-    }
-
-    function refreshStats() {
-        return getStats().then(function (data) {
-            State._statsCache = {};
-            Object.keys(data).forEach(function (botId) {
-                if (data[botId] && data[botId].stats) {
-                    State._statsCache[botId] = data[botId].stats;
-                }
-            });
-            return State._statsCache;
-        });
+        return window.QamarFB.get(CONFIG.LOCK_ROOT)
+            .then(function (data) { return data || {}; })
+            .catch(function () { return {}; });
     }
 
     /* ══════════════════════════════════════════════ */
@@ -569,9 +576,6 @@
     /* ══════════════════════════════════════════════ */
     function _boot() {
         initBots().then(function () {
-            refreshStats().catch(function () {});
-
-            // استمع للرسائل الواردة من chat.js
             if (window.EventBus) {
                 window.EventBus.on('chat:message', function (payload) {
                     if (payload && payload.message) {
@@ -618,7 +622,6 @@
         setBotRooms: setBotRooms,
 
         getStats: getStats,
-        refreshStats: refreshStats,
 
         onBotsEvent: onBotsEvent,
 
