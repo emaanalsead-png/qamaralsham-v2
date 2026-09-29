@@ -1,8 +1,8 @@
 // ==============================================
-// debug/debug-panel.js v1.1
+// debug/debug-panel.js v1.2
 // Mobile-friendly debug panel — no console needed
 // ==============================================
-// ✅ v1.1: throttle spam — لا تُظهر نفس الرسالة أكثر من 3 مرات
+// ✅ v1.2: spam-filter يحذف timestamp قبل hash
 // ==============================================
 
 (function () {
@@ -12,11 +12,11 @@
 
     const LOG_TAG = '[DBG]';
     const MAX_ENTRIES = 60;
-    const SPAM_THRESHOLD = 3;          // نفس الرسالة أكثر من 3 → احذف الباقي
-    const SPAM_WINDOW_MS = 5000;        // خلال 5 ثواني
+    const SPAM_THRESHOLD = 3;
+    const SPAM_WINDOW_MS = 10000;
 
     const CONFIG = {
-        VERSION: '1.1.0',
+        VERSION: '1.2.0',
         AUTO_OPEN_URL_PARAM: 'debug',
         TAP_THRESHOLD: 5,
         TAP_WINDOW_MS: 3000,
@@ -42,7 +42,7 @@
 
     const State = {
         entries: [],
-        suppressed: {},      // { hash: { count, firstAt } }
+        suppressed: {},
         panelEl: null,
         bodyEl: null,
         fabEl: null,
@@ -52,7 +52,8 @@
         startTime: Date.now(),
         _initialized: false,
         _errorsCount: 0,
-        _warnsCount: 0
+        _warnsCount: 0,
+        _suppressedCount: 0
     };
 
     function _ts() {
@@ -77,25 +78,39 @@
         return Math.floor(m / 60) + 'س';
     }
 
+    // ⭐ v1.2: إزالة timestamp + ضوضاء قبل التشفير
+    function _cleanForHash(text) {
+        return String(text || '')
+            .replace(/\[\d{4}-\d{2}-\d{2}T[\d:.]+Z\]/g, '')
+            .replace(/\d{13,}/g, 'N')
+            .replace(/:\d+\.\d+/g, ':N')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .substring(0, 150);
+    }
+
     function _hashText(s) {
         let h = 5381;
-        const str = String(s || '').substring(0, 200);
+        const str = String(s || '');
         for (let i = 0; i < str.length; i++) {
             h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
         }
         return h.toString(36);
     }
 
-    // ⭐ v1.1: فلترة spam
+    // ⭐ v1.2: hash بعد التنظيف
     function _isSpam(type, text) {
-        const key = type + '::' + _hashText(text);
+        const clean = _cleanForHash(text);
+        const key = type + '::' + _hashText(clean);
         const now = Date.now();
         const prev = State.suppressed[key];
 
         if (prev && (now - prev.firstAt) < SPAM_WINDOW_MS) {
             prev.count++;
             if (prev.count > SPAM_THRESHOLD) {
-                return true;  // تجاهل
+                State._suppressedCount++;
+                _updateFab();
+                return true;
             }
         } else {
             State.suppressed[key] = { count: 1, firstAt: now };
@@ -301,7 +316,6 @@
     function _handleTap() {
         State.tapCount++;
         if (State.tapTimer) clearTimeout(State.tapTimer);
-
         if (State.tapCount >= CONFIG.TAP_THRESHOLD) {
             State.tapCount = 0;
             _open();
@@ -336,7 +350,7 @@
             '<div style="flex:1;">' +
                 '<div style="font-size:14px;font-weight:900;color:#c084fc;">Debug Panel</div>' +
                 '<div style="font-size:10px;color:#888;">v' + CONFIG.VERSION +
-                    ' · spam-filter on' +
+                    ' · filter on' +
                 '</div>' +
             '</div>' +
             '<button id="qd-copy" style="background:#3b82f6;color:#fff;border:none;' +
@@ -438,7 +452,7 @@
         ));
         statuses.appendChild(_chip(
             '⚠️ Warnings',
-            String(State._warnsCount),
+            String(State._warnsCount) + (State._suppressedCount > 0 ? ' (+' + State._suppressedCount + ' مخفي)' : ''),
             State._warnsCount > 0 ? '#f59e0b' : '#6b7280'
         ));
 
@@ -474,7 +488,10 @@
             'border-radius:10px;padding:10px;margin-bottom:10px;';
 
         let errsHtml = '<div style="font-size:11px;font-weight:900;color:#ff8888;margin-bottom:6px;">' +
-            '📋 السجل (' + State.entries.length + ')</div>';
+            '📋 السجل (' + State.entries.length + ')' +
+            (State._suppressedCount > 0 ?
+                ' <span style="color:#666;">— تم كتم ' + State._suppressedCount + ' مكرر</span>' : '') +
+            '</div>';
 
         if (State.entries.length === 0) {
             errsHtml += '<div style="text-align:center;color:#666;font-size:11px;padding:14px;">' +
@@ -551,6 +568,7 @@
             '── Modules ──',
             'Loaded: ' + mods.loaded.length + '/' + MODULE_LIST.length,
             'Missing: ' + (mods.missing.join(', ') || 'none'),
+            'Suppressed: ' + State._suppressedCount,
             '',
             '── Logs (' + State.entries.length + ') ──'
         ];
@@ -563,7 +581,7 @@
         const text = lines.join('\n');
 
         const done = function () {
-            _toast('📋 تم النسخ — الصقه في المحادثة');
+            _toast('📋 تم النسخ');
         };
         const fail = function () {
             try {
@@ -592,6 +610,7 @@
         State.suppressed = {};
         State._errorsCount = 0;
         State._warnsCount = 0;
+        State._suppressedCount = 0;
         _updateFab();
         _renderBody();
         _toast('🗑️ تم مسح السجل');
@@ -705,10 +724,11 @@
                 entriesCount: State.entries.length,
                 errorsCount: State._errorsCount,
                 warnsCount: State._warnsCount,
+                suppressedCount: State._suppressedCount,
                 modules: _getModuleStatus()
             };
         }
     };
 
-    try { console.log(LOG_TAG + ' 📦 [debug-panel.js v1.1] loaded'); } catch (e) {}
+    try { console.log(LOG_TAG + ' 📦 [debug-panel.js v1.2] loaded'); } catch (e) {}
 })();
