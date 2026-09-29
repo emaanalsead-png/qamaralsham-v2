@@ -1,15 +1,24 @@
 // ==============================================
-// security/suspects.js
-// King's suspects list + auto-record hooks
+// security/suspects.js v2 — إصلاح نوع الإرجاع
 // ==============================================
 // يعتمد على: firebase.js + auth.js + ranks.js + audit.js
 // يعطي: window.QamarSuspects
+// ==============================================
+// ⭐ v2 (فوق v1):
+//   1. فصل isSuspectSync / isSuspectAsync
+//   2. isSuspect → alias لـ Async (توافق خلفي)
+//   3. isSuspectSync — فورية، كاش فقط (لـ voice-monitor)
+//   4. isSuspectAsync — دائماً Promise (للعمليات)
+//   5. shouldRecord → Sync (سرعة قصوى)
+//   6. كل نوع إرجاع ثابت 100%
 // ==============================================
 
 (function () {
     'use strict';
 
-    if (!window.QamarFB) {
+    if (window.QamarFB) {
+        if (window.QamarSuspects && window.QamarSuspects.__v2) return;
+    } else {
         console.error('❌ [suspects] firebase.js not loaded!');
         return;
     }
@@ -35,12 +44,11 @@
     /* State                                           */
     /* ══════════════════════════════════════════════ */
     const State = {
-        // نسخة محلية كاملة لقائمة المشبوهين (uid → data)
         cache: {},
         cachedAt: 0,
         listeners: [],
-        // قائمة UIDs (سريعة للفحص)
-        uidSet: {}
+        uidSet: {},
+        _initialized: false
     };
 
     /* ══════════════════════════════════════════════ */
@@ -102,7 +110,7 @@
     }
 
     function _isCacheFresh() {
-        return (Date.now() - State.cachedAt) < CONFIG.CACHE_TTL_MS;
+        return (Date.now() - State.cachedAt) < CONFIG.CACHE_TTL_MS && State.cachedAt > 0;
     }
 
     function _invalidate() {
@@ -118,7 +126,7 @@
         if (!_isKing()) {
             return Promise.resolve({});
         }
-        if (!force && _isCacheFresh() && State.cachedAt > 0) {
+        if (!force && _isCacheFresh()) {
             return Promise.resolve(State.cache);
         }
         return window.QamarFB.children(CONFIG.ROOT)
@@ -138,12 +146,72 @@
     }
 
     /* ══════════════════════════════════════════════ */
+    /* ⭐ v2: isSuspectSync — فورية، boolean دائماً   */
+    /* ══════════════════════════════════════════════ */
+    /**
+     * فحص سريع من الكاش المحلي فقط.
+     * - لا يقرأ من Firebase أبداً
+     * - يُرجع false إذا الكاش غير طازج (آمن)
+     * - يستخدمه voice-monitor للسرعة
+     * @param {string} uid
+     * @returns {boolean}
+     */
+    function isSuspectSync(uid) {
+        if (!uid) return false;
+        if (!_isKing()) return false;
+        if (!_isCacheFresh()) return false;
+        return State.uidSet[uid] === true;
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* ⭐ v2: isSuspectAsync — Promise<boolean> دائماً */
+    /* ══════════════════════════════════════════════ */
+    /**
+     * فحص كامل — يستخدم الكاش إذا طازج، وإلا يقرأ من Firebase.
+     * - يُرجع Promise<boolean> دائماً
+     * - يُحدّث الكاش
+     * @param {string} uid
+     * @returns {Promise<boolean>}
+     */
+    function isSuspectAsync(uid) {
+        if (!uid) return Promise.resolve(false);
+        if (!_isKing()) return Promise.resolve(false);
+
+        // استخدم الكاش إذا طازج
+        if (_isCacheFresh()) {
+            return Promise.resolve(State.uidSet[uid] === true);
+        }
+
+        // اقرأ من Firebase
+        return window.QamarFB.exists(CONFIG.ROOT + '/' + uid)
+            .then(function (exists) {
+                // حدّث الكاش المحلي
+                if (exists) {
+                    State.uidSet[uid] = true;
+                } else {
+                    delete State.uidSet[uid];
+                }
+                return !!exists;
+            })
+            .catch(function () { return false; });
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* ⭐ v2: isSuspect — alias لـ Async (توافق)     */
+    /* ══════════════════════════════════════════════ */
+    /**
+     * للتوافق الخلفي. دائماً Promise<boolean>.
+     * @deprecated استخدم isSuspectSync أو isSuspectAsync مباشرة.
+     */
+    function isSuspect(uid) {
+        return isSuspectAsync(uid);
+    }
+
+    /* ══════════════════════════════════════════════ */
     /* Read                                            */
     /* ══════════════════════════════════════════════ */
     function listAll(force) {
-        if (!_isKing()) {
-            return Promise.resolve([]);
-        }
+        if (!_isKing()) return Promise.resolve([]);
         return _loadIfNeeded(force).then(function (data) {
             return Object.keys(data).map(function (uid) {
                 return Object.assign({ uid: uid }, data[uid]);
@@ -159,25 +227,6 @@
             if (!data[uid]) return null;
             return Object.assign({ uid: uid }, data[uid]);
         });
-    }
-
-    // boolean check (from cache if available)
-    function isSuspect(uid) {
-        if (!uid) return false;
-        // إذا عندنا كاش طازج
-        if (_isCacheFresh() && State.cachedAt > 0) {
-            return !!State.uidSet[uid];
-        }
-        // fallback: قراءة مباشرة (الملك فقط يستطيع)
-        if (!_isKing()) return false;
-        return window.QamarFB.exists(CONFIG.ROOT + '/' + uid)
-            .catch(function () { return false; });
-    }
-
-    // اسم متزامن (لا يعتمد على Firebase)
-    function isSuspectSync(uid) {
-        if (!uid) return false;
-        return !!State.uidSet[uid];
     }
 
     function count() {
@@ -200,15 +249,12 @@
     function addSuspect(uid, options) {
         options = options || {};
         return Promise.resolve().then(function () {
-            if (!_isKing()) {
-                throw new Error('فقط الملك يمكنه إدارة المشبوهين');
-            }
+            if (!_isKing()) throw new Error('فقط الملك يمكنه إدارة المشبوهين');
             if (!uid) throw new Error('uid مطلوب');
 
             const currentUid = _getCurrentUid();
             if (uid === currentUid) throw new Error('لا يمكنك إضافة نفسك');
 
-            // اقرأ بيانات المستخدم الهدف
             return window.QamarFB.get('users/' + uid).then(function (u) {
                 if (!u) throw new Error('المستخدم غير موجود');
 
@@ -223,11 +269,9 @@
 
                 return window.QamarFB.set(CONFIG.ROOT + '/' + uid, payload)
                     .then(function () {
-                        // حدّث الكاش المحلي
                         State.cache[uid] = payload;
                         State.uidSet[uid] = true;
 
-                        // سجّل في audit
                         if (window.QamarAudit) {
                             window.QamarAudit.log('addSuspect', {
                                 targetUid: uid,
@@ -244,13 +288,11 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Remove suspect (King only)                      */
+    /* Remove suspect                                  */
     /* ══════════════════════════════════════════════ */
     function removeSuspect(uid) {
         return Promise.resolve().then(function () {
-            if (!_isKing()) {
-                throw new Error('فقط الملك يمكنه إدارة المشبوهين');
-            }
+            if (!_isKing()) throw new Error('فقط الملك');
             if (!uid) throw new Error('uid مطلوب');
 
             return window.QamarFB.get(CONFIG.ROOT + '/' + uid).then(function (existing) {
@@ -268,7 +310,6 @@
                     }
 
                     _emit('suspect:removed', { uid: uid });
-                    Logger.info('✅ Suspect removed:', uid.substring(0, 8));
                     return { ok: true, uid: uid };
                 });
             });
@@ -279,20 +320,18 @@
     /* Toggle                                          */
     /* ══════════════════════════════════════════════ */
     function toggleSuspect(uid) {
-        return isSuspect(uid).then(function (is) {
+        return isSuspectAsync(uid).then(function (is) {
             if (is) return removeSuspect(uid);
             return addSuspect(uid);
         });
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Clear all (King only)                           */
+    /* Clear all                                       */
     /* ══════════════════════════════════════════════ */
     function clearAll() {
         return Promise.resolve().then(function () {
-            if (!_isKing()) {
-                throw new Error('فقط الملك');
-            }
+            if (!_isKing()) throw new Error('فقط الملك');
             return window.QamarFB.remove(CONFIG.ROOT).then(function () {
                 _invalidate();
                 if (window.QamarAudit) {
@@ -301,22 +340,16 @@
                     });
                 }
                 _emit('suspect:cleared', {});
-                Logger.info('🧹 All suspects cleared');
                 return { ok: true };
             });
         });
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Alerts — log king_alerts                        */
+    /* Alerts                                          */
     /* ══════════════════════════════════════════════ */
     function logAlert(payload) {
         if (!payload) return Promise.resolve(null);
-        if (window.QamarRanks && !window.QamarRanks.isKing()) {
-            // فقط الملك أو voice-monitor المتصفح
-            // لكن القاعدة تسمح بـ auth != null → نسمح
-        }
-
         const entry = Object.assign({
             createdAt: window.QamarFB.serverTime()
         }, payload);
@@ -347,24 +380,30 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Hook — يُستدعى من voice-monitor عند انضمام مايك  */
+    /* Hooks (voice-monitor يستخدم Sync)              */
     /* ══════════════════════════════════════════════ */
-    function onVoiceJoin(uid, context) {
-        // hook للتسجيل التلقائي (voice-monitor.js يستدعيه)
-        if (!uid) return Promise.resolve({ trigger: false });
-        return isSuspect(uid).then(function (yes) {
-            if (yes) {
-                Logger.info('👁️ Suspect joined voice:', uid.substring(0, 8));
-                _emit('suspect:voiceJoined', { uid: uid, context: context || {} });
-                return { trigger: true, uid: uid, context: context || {} };
-            }
-            return { trigger: false };
-        });
-    }
-
-    // متزامن — voice-monitor يستخدمه للسرعة
+    /**
+     * فحص سريع (متزامن) — يُستخدم من voice-monitor
+     * عندما يُنضم مستخدم للمايك.
+     * @param {string} uid
+     * @returns {boolean}
+     */
     function shouldRecord(uid) {
         return isSuspectSync(uid);
+    }
+
+    /**
+     * hook قديم — للتوافق
+     */
+    function onVoiceJoin(uid, context) {
+        if (!uid) return Promise.resolve({ trigger: false });
+        const is = isSuspectSync(uid);
+        if (is) {
+            Logger.info('👁️ Suspect joined voice:', uid.substring(0, 8));
+            _emit('suspect:voiceJoined', { uid: uid, context: context || {} });
+            return Promise.resolve({ trigger: true, uid: uid, context: context || {} });
+        }
+        return Promise.resolve({ trigger: false });
     }
 
     /* ══════════════════════════════════════════════ */
@@ -403,6 +442,9 @@
     /* Init — watch when King logs in                  */
     /* ══════════════════════════════════════════════ */
     function _init() {
+        if (State._initialized) return;
+        State._initialized = true;
+
         if (window.QamarAuth && window.QamarAuth.onAuthChange) {
             window.QamarAuth.onAuthChange(function (payload) {
                 if (payload.isLoggedIn && _isKing()) {
@@ -419,7 +461,11 @@
         Logger.info('📦 [suspects.js] initialized');
     }
 
-    if (window.EventBus) {
+    if (window.QamarBoot && typeof window.QamarBoot.whenReady === 'function') {
+        window.QamarBoot.whenReady('background', function () {
+            setTimeout(_init, 800);
+        });
+    } else if (window.EventBus) {
         window.EventBus.once('boot:ready', function () {
             setTimeout(_init, 1200);
         });
@@ -430,15 +476,19 @@
     /* ══════════════════════════════════════════════ */
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
-    const QamarSuspects = {
-        // Config
+    window.QamarSuspects = {
+        __v2: true,
         CONFIG: CONFIG,
+
+        // ⭐ v2: الوصول الواضح
+        isSuspectSync: isSuspectSync,      // boolean دائماً
+        isSuspectAsync: isSuspectAsync,    // Promise<boolean> دائماً
+        isSuspect: isSuspect,               // alias (Promise) — deprecated
+        shouldRecord: shouldRecord,         // boolean (sync)
 
         // Read
         listAll: listAll,
         getSuspect: getSuspect,
-        isSuspect: isSuspect,
-        isSuspectSync: isSuspectSync,
         count: count,
         listUids: listUids,
 
@@ -452,9 +502,8 @@
         logAlert: logAlert,
         listAlerts: listAlerts,
 
-        // Hooks (voice-monitor)
+        // Hooks
         onVoiceJoin: onVoiceJoin,
-        shouldRecord: shouldRecord,
 
         // Live
         watch: watch,
@@ -467,7 +516,5 @@
         getStatus: getStatus
     };
 
-    window.QamarSuspects = QamarSuspects;
-
-    Logger.info('📦 [suspects.js] loaded');
+    Logger.info('📦 [suspects.js v2] loaded — fixed isSuspect type');
 })();
