@@ -5,6 +5,8 @@
 // يعتمد على: firebase.js + resilience.js
 // يعطي: window.QamarCleaners
 // ==============================================
+// ✅ v2.1: ينتظر auth + الملك فقط (لا permission_denied)
+// ==============================================
 
 (function () {
     'use strict';
@@ -26,37 +28,69 @@
     /* Config                                          */
     /* ══════════════════════════════════════════════ */
     const CONFIG = {
-        STORIES_TTL_MS:       24 * 60 * 60 * 1000,       // 24 ساعة
-        STORIES_INTERVAL_MS:  6 * 60 * 60 * 1000,        // كل 6 ساعات
-        VOICE_MSGS_TTL_MS:    60 * 60 * 1000,            // ساعة
-        VOICE_MSGS_INTERVAL_MS: 15 * 60 * 1000,          // كل 15 دقيقة
-        PM_VOICE_INTERVAL_MS: 30 * 60 * 1000,            // كل 30 دقيقة
-        AUDIT_TTL_MS:         30 * 24 * 60 * 60 * 1000,  // 30 يوم
-        AUDIT_INTERVAL_MS:    24 * 60 * 60 * 1000,       // يومياً
-        NOTIF_TTL_MS:         7 * 24 * 60 * 60 * 1000,   // 7 أيام
-        NOTIF_INTERVAL_MS:    12 * 60 * 60 * 1000,       // كل 12 ساعة
-        LOCK_CLEAN_INTERVAL_MS: 10 * 60 * 1000,          // كل 10 دقائق
-        SESSION_INTERVAL_MS:  24 * 60 * 60 * 1000,       // يومياً
-        LOCK_TIMEOUT_MS:      30 * 60 * 1000,            // قفل ينتهي بعد 30 دقيقة
-        MAX_BATCH_SIZE:       200
+        STORIES_TTL_MS:       24 * 60 * 60 * 1000,
+        STORIES_INTERVAL_MS:  6 * 60 * 60 * 1000,
+        VOICE_MSGS_TTL_MS:    60 * 60 * 1000,
+        VOICE_MSGS_INTERVAL_MS: 15 * 60 * 1000,
+        PM_VOICE_INTERVAL_MS: 30 * 60 * 1000,
+        AUDIT_TTL_MS:         30 * 24 * 60 * 60 * 1000,
+        AUDIT_INTERVAL_MS:    24 * 60 * 60 * 1000,
+        NOTIF_TTL_MS:         7 * 24 * 60 * 60 * 1000,
+        NOTIF_INTERVAL_MS:    12 * 60 * 60 * 1000,
+        LOCK_CLEAN_INTERVAL_MS: 10 * 60 * 1000,
+        SESSION_INTERVAL_MS:  24 * 60 * 60 * 1000,
+        LOCK_TIMEOUT_MS:      30 * 60 * 1000,
+        MAX_BATCH_SIZE:       200,
+        // ⭐ v2.1
+        FIRST_RUN_DELAY_MS:   45000,     // 45s بعد التحميل
+        MIN_LEVEL:            90          // 90+ أو الملك
     };
 
     /* ══════════════════════════════════════════════ */
     /* State                                           */
     /* ══════════════════════════════════════════════ */
     const State = {
-        jobs: {},                 // { name: { fn, intervalMs, timer, lastRun, lastResult } }
+        jobs: {},
         running: false,
         startedAt: 0,
-        instanceId: null,         // معرف التبويب
-        activeJobs: {}            // لتتبع التنفيذ الحالي
+        instanceId: null,
+        activeJobs: {},
+        // ⭐ v2.1: إذا فشل قفل واحد بسبب الصلاحيات → أوقف الكل
+        _permDenied: false
     };
 
-    // معرف فريد لكل تبويب (لتوزيع الأقفال)
     function _genInstanceId() {
         return 'inst_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
     }
     State.instanceId = _genInstanceId();
+
+    /* ══════════════════════════════════════════════ */
+    /* Helpers                                         */
+    /* ══════════════════════════════════════════════ */
+    function _hasUser() {
+        return !!(window.auth && window.auth.currentUser);
+    }
+
+    function _isKing() {
+        if (window.QamarRanks && window.QamarRanks.isKing) {
+            try { return window.QamarRanks.isKing(); } catch (e) { return false; }
+        }
+        return false;
+    }
+
+    function _myLevel() {
+        if (window.QamarRanks && window.QamarRanks.myLevel) {
+            try { return window.QamarRanks.myLevel(); } catch (e) { return 0; }
+        }
+        return 0;
+    }
+
+    // ⭐ v2.1: cleaners تعمل فقط لمن 90+ أو الملك
+    function _canRunCleaners() {
+        if (!_hasUser()) return false;
+        if (_isKing()) return true;
+        return _myLevel() >= CONFIG.MIN_LEVEL;
+    }
 
     /* ══════════════════════════════════════════════ */
     /* Distributed Lock                                */
@@ -67,8 +101,12 @@
         return LOCK_ROOT + '/' + jobName + '_lock';
     }
 
-    // حاول الحصول على قفل. يرجع { acquired: bool, data }
     function _acquireLock(jobName) {
+        // ⭐ v2.1: إذا فشل سابقاً → لا تحاول مجدداً
+        if (State._permDenied) {
+            return Promise.resolve({ acquired: false, data: null, reason: 'disabled' });
+        }
+
         const path = _lockPath(jobName);
         const myLock = {
             instanceId: State.instanceId,
@@ -76,34 +114,40 @@
         };
 
         return window.QamarFB.transaction(path, function (current) {
-            // إذا لا يوجد قفل → احصل عليه
             if (!current) return myLock;
-            // إذا القفل قديم → احصل عليه
             if (Date.now() - (current.at || 0) > CONFIG.LOCK_TIMEOUT_MS) {
                 return myLock;
             }
-            // إذا القفل لنفس التبويب → جدده
             if (current.instanceId === State.instanceId) {
                 return myLock;
             }
-            // قفل نشط لتبويب آخر → لا تحصل
-            return undefined; // abort transaction
+            return undefined;
         }).then(function (res) {
             return {
                 acquired: !!(res && res.committed && res.snapshot && res.snapshot.instanceId === State.instanceId),
                 data: res ? res.snapshot : null
             };
         }).catch(function (err) {
-            Logger.warn('Lock acquire error for', jobName, err.message);
+            const msg = (err && err.message) || '';
+            // ⭐ v2.1: إذا permission_denied → أوقف كل الـ cleaners
+            if (msg.indexOf('permission') !== -1 || msg.indexOf('PERMISSION') !== -1) {
+                if (!State._permDenied) {
+                    State._permDenied = true;
+                    Logger.warn('🔒 Cleaners disabled — permission denied on system locks');
+                }
+            } else {
+                Logger.debug('Lock acquire failed for', jobName, msg);
+            }
             return { acquired: false, data: null };
         });
     }
 
     function _releaseLock(jobName) {
+        if (State._permDenied) return Promise.resolve();
         const path = _lockPath(jobName);
         return window.QamarFB.transaction(path, function (current) {
             if (!current) return null;
-            if (current.instanceId !== State.instanceId) return undefined; // ليس قفلنا
+            if (current.instanceId !== State.instanceId) return undefined;
             return null;
         }).catch(function () { return null; });
     }
@@ -130,14 +174,18 @@
 
     function _runJob(name, force) {
         const job = State.jobs[name];
-        if (!job) {
-            Logger.warn('Unknown job:', name);
-            return Promise.resolve({ skipped: 'unknown' });
+        if (!job) return Promise.resolve({ skipped: 'unknown' });
+
+        // ⭐ v2.1: تحقق أولاً
+        if (!force && !_canRunCleaners()) {
+            return Promise.resolve({ skipped: 'no-permission' });
         }
 
-        // لا تشغّل نفس المهمة بالتوازي
+        if (State._permDenied) {
+            return Promise.resolve({ skipped: 'disabled' });
+        }
+
         if (State.activeJobs[name]) {
-            Logger.debug('Job already running:', name);
             return Promise.resolve({ skipped: 'running' });
         }
 
@@ -145,9 +193,8 @@
 
         return _acquireLock(name).then(function (lock) {
             if (!lock.acquired && !force) {
-                Logger.debug('Lock not acquired for', name, '— skipping');
                 State.activeJobs[name] = false;
-                return { skipped: 'locked', lockData: lock.data };
+                return { skipped: 'locked' };
             }
 
             Logger.info('🔧 Running job:', name);
@@ -160,15 +207,18 @@
                     job.lastRun = Date.now();
                     job.lastResult = { ok: true, elapsed: elapsed, result: result };
                     job.runs++;
-                    Logger.info('✅ Job done:', name, '(' + elapsed + 'ms)', result ? JSON.stringify(result) : '');
+                    Logger.info('✅ Job done:', name, '(' + elapsed + 'ms)');
                     return { ok: true, elapsed: elapsed, result: result };
                 })
                 .catch(function (err) {
                     job.lastRun = Date.now();
                     job.lastResult = { ok: false, error: err.message };
                     job.errors++;
-                    Logger.error('❌ Job failed:', name, err.message);
-                    return { ok: false, error: err.message };
+                    const msg = err.message || '';
+                    if (msg.indexOf('permission') === -1 && msg.indexOf('PERMISSION') === -1) {
+                        Logger.warn('Job failed:', name, msg);
+                    }
+                    return { ok: false, error: msg };
                 })
                 .then(function (r) {
                     State.activeJobs[name] = false;
@@ -176,7 +226,7 @@
                 });
         }).catch(function (err) {
             State.activeJobs[name] = false;
-            Logger.error('Job runner error:', name, err.message);
+            Logger.debug('Job runner error:', name, err.message);
             return { ok: false, error: err.message };
         });
     }
@@ -188,12 +238,13 @@
 
         const run = function () {
             _runJob(name).then(function () {
+                if (State._permDenied) return; // لا تعيد الجدولة
                 job.timer = setTimeout(run, job.intervalMs);
             });
         };
 
-        // أول تشغيل بعد 20 ثانية (تأخير مبدئي)
-        job.timer = setTimeout(run, 20000);
+        // أول تشغيل بعد 45 ثانية (لكي يمنح الوقت للمستخدم)
+        job.timer = setTimeout(run, CONFIG.FIRST_RUN_DELAY_MS);
     }
 
     function _startJob(name) {
@@ -209,25 +260,22 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══ JOB 1: Stories Cleaner                   ═══ */
+    /* JOB 1: Stories Cleaner                          */
     /* ══════════════════════════════════════════════ */
     function _cleanStories() {
         const cutoff = Date.now();
         return window.QamarFB.children('stories').then(function (users) {
             if (!users) return { scanned: 0, removed: 0 };
-
             const updates = {};
             let scanned = 0, removed = 0;
 
             Object.keys(users).forEach(function (uid) {
                 const userStories = users[uid];
                 if (!userStories || typeof userStories !== 'object') return;
-
                 Object.keys(userStories).forEach(function (sid) {
                     const story = userStories[sid];
                     if (!story) return;
                     scanned++;
-
                     const expiresAt = story.expiresAt || ((story.createdAt || 0) + CONFIG.STORIES_TTL_MS);
                     if (expiresAt > 0 && expiresAt < cutoff) {
                         updates['stories/' + uid + '/' + sid] = null;
@@ -238,7 +286,6 @@
 
             if (removed === 0) return { scanned: scanned, removed: 0 };
 
-            // احذف على دفعات (لتفادي payload ضخم)
             const keys = Object.keys(updates);
             const batches = [];
             for (let i = 0; i < keys.length; i += CONFIG.MAX_BATCH_SIZE) {
@@ -256,13 +303,12 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══ JOB 2: Room Voice Messages Cleaner       ═══ */
+    /* JOB 2: Room Voice Messages Cleaner              */
     /* ══════════════════════════════════════════════ */
     function _cleanRoomVoiceMsgs() {
         const now = Date.now();
         return window.QamarFB.children('room_voice_msgs').then(function (rooms) {
             if (!rooms) return { scanned: 0, removed: 0 };
-
             const updates = {};
             let scanned = 0, removed = 0;
 
@@ -283,7 +329,6 @@
 
             if (removed === 0) return { scanned: scanned, removed: 0 };
 
-            // دفعات
             const keys = Object.keys(updates);
             const batches = [];
             for (let i = 0; i < keys.length; i += CONFIG.MAX_BATCH_SIZE) {
@@ -301,12 +346,11 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══ JOB 3: PM Voice Messages Cleaner         ═══ */
+    /* JOB 3: PM Voice Messages Cleaner                */
     /* ══════════════════════════════════════════════ */
     function _cleanPMVoiceMsgs() {
         return window.QamarFB.children('pm_voice_msgs').then(function (users) {
             if (!users) return { scanned: 0, removed: 0 };
-
             const updates = {};
             let scanned = 0, removed = 0;
 
@@ -317,7 +361,6 @@
                     const m = msgs[rid];
                     if (!m) return;
                     scanned++;
-                    // احذف إذا شوهد (viewed=true)
                     if (m.viewed === true) {
                         updates['pm_voice_msgs/' + uid + '/' + rid] = null;
                         removed++;
@@ -344,11 +387,12 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══ JOB 4: Locks Cleanup                     ═══ */
+    /* JOB 4: Locks Cleanup                            */
     /* ══════════════════════════════════════════════ */
     function _cleanStaleLocks() {
         const cutoff = Date.now() - CONFIG.LOCK_TIMEOUT_MS;
-        const jobs = ['stories_cleaner', 'room_voice_cleaner', 'pm_voice_cleaner', 'audit_cleaner', 'notif_cleaner', 'session_cleaner'];
+        const jobs = ['stories_cleaner', 'room_voice_cleaner', 'pm_voice_cleaner',
+                      'audit_cleaner', 'notif_cleaner', 'session_cleaner'];
         const updates = {};
 
         return Promise.all(jobs.map(function (j) {
@@ -359,7 +403,6 @@
                     updates[_lockPath(jobs[i])] = null;
                 }
             });
-
             if (Object.keys(updates).length === 0) return { cleaned: 0 };
             return window.QamarFB.multiUpdate(updates).then(function () {
                 return { cleaned: Object.keys(updates).length };
@@ -368,13 +411,12 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══ JOB 5: Audit Log Cleaner                 ═══ */
+    /* JOB 5: Audit Log Cleaner                        */
     /* ══════════════════════════════════════════════ */
     function _cleanAuditLog() {
         const cutoff = Date.now() - CONFIG.AUDIT_TTL_MS;
         return window.QamarFB.children('audit_log').then(function (rooms) {
             if (!rooms) return { scanned: 0, removed: 0 };
-
             const updates = {};
             let scanned = 0, removed = 0;
 
@@ -411,13 +453,12 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══ JOB 6: Notifications Cleaner             ═══ */
+    /* JOB 6: Notifications Cleaner                    */
     /* ══════════════════════════════════════════════ */
     function _cleanNotifications() {
         const cutoff = Date.now() - CONFIG.NOTIF_TTL_MS;
         return window.QamarFB.children('user_notifications').then(function (users) {
             if (!users) return { scanned: 0, removed: 0 };
-
             const updates = {};
             let scanned = 0, removed = 0;
 
@@ -454,14 +495,12 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══ JOB 7: Session Cleaner (heartbeat stale) ═══ */
+    /* JOB 7: Session Cleaner                          */
     /* ══════════════════════════════════════════════ */
     function _cleanStaleSessions() {
-        // احذف voice participants بدون heartbeat خلال 2 دقيقة
         const cutoff = Date.now() - (2 * 60 * 1000);
         return window.QamarFB.children('room_voice').then(function (rooms) {
             if (!rooms) return { scanned: 0, removed: 0 };
-
             const updates = {};
             let scanned = 0, removed = 0;
 
@@ -489,7 +528,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══ JOB 8: Voice Monitor Lock Cleaner        ═══ */
+    /* JOB 8: Voice Monitor Lock Cleaner               */
     /* ══════════════════════════════════════════════ */
     function _cleanVoiceMonitorLocks() {
         const cutoff = Date.now() - (5 * 60 * 1000);
@@ -514,24 +553,48 @@
     /* ══════════════════════════════════════════════ */
     /* Register Jobs                                   */
     /* ══════════════════════════════════════════════ */
-    _registerJob('stories_cleaner',      _cleanStories,          CONFIG.STORIES_INTERVAL_MS);
-    _registerJob('room_voice_cleaner',   _cleanRoomVoiceMsgs,    CONFIG.VOICE_MSGS_INTERVAL_MS);
-    _registerJob('pm_voice_cleaner',     _cleanPMVoiceMsgs,      CONFIG.PM_VOICE_INTERVAL_MS);
-    _registerJob('lock_cleaner',         _cleanStaleLocks,       CONFIG.LOCK_CLEAN_INTERVAL_MS);
-    _registerJob('audit_cleaner',        _cleanAuditLog,         CONFIG.AUDIT_INTERVAL_MS);
-    _registerJob('notif_cleaner',        _cleanNotifications,    CONFIG.NOTIF_INTERVAL_MS);
-    _registerJob('session_cleaner',      _cleanStaleSessions,    CONFIG.SESSION_INTERVAL_MS);
+    _registerJob('stories_cleaner',       _cleanStories,           CONFIG.STORIES_INTERVAL_MS);
+    _registerJob('room_voice_cleaner',    _cleanRoomVoiceMsgs,     CONFIG.VOICE_MSGS_INTERVAL_MS);
+    _registerJob('pm_voice_cleaner',      _cleanPMVoiceMsgs,       CONFIG.PM_VOICE_INTERVAL_MS);
+    _registerJob('lock_cleaner',          _cleanStaleLocks,        CONFIG.LOCK_CLEAN_INTERVAL_MS);
+    _registerJob('audit_cleaner',         _cleanAuditLog,          CONFIG.AUDIT_INTERVAL_MS);
+    _registerJob('notif_cleaner',         _cleanNotifications,     CONFIG.NOTIF_INTERVAL_MS);
+    _registerJob('session_cleaner',       _cleanStaleSessions,     CONFIG.SESSION_INTERVAL_MS);
     _registerJob('voice_monitor_cleaner', _cleanVoiceMonitorLocks, 10 * 60 * 1000);
 
     /* ══════════════════════════════════════════════ */
     /* Public API                                      */
     /* ══════════════════════════════════════════════ */
-    function start() {
+    function _doStart() {
         if (State.running) return;
         State.running = true;
         State.startedAt = Date.now();
+        State._permDenied = false;
         Logger.info('🚀 Starting cleaners (instance=' + State.instanceId + ')');
         Object.keys(State.jobs).forEach(_startJob);
+    }
+
+    // ⭐ v2.1: start() تنتظر مستخدم مؤهل
+    function start() {
+        if (State.running) return;
+
+        // إذا المستخدم مؤهل الآن → ابدأ
+        if (_canRunCleaners()) {
+            _doStart();
+            return;
+        }
+
+        // وإلا → انتظر تغيير auth
+        if (window.QamarAuth && window.QamarAuth.onAuthChange) {
+            window.QamarAuth.onAuthChange(function (p) {
+                if (p.isLoggedIn && _canRunCleaners() && !State.running) {
+                    Logger.info('👤 Cleaners: user now eligible — starting');
+                    setTimeout(_doStart, 3000);
+                } else if (!p.isLoggedIn && State.running) {
+                    stop();
+                }
+            });
+        }
     }
 
     function stop() {
@@ -541,13 +604,13 @@
     }
 
     function runNow(name) {
+        if (!_canRunCleaners()) {
+            return Promise.resolve({ skipped: 'no-permission' });
+        }
         if (name) return _runJob(name, true);
-        // شغّل الكل
         return Promise.all(Object.keys(State.jobs).map(function (n) {
             return _runJob(n, true);
-        })).then(function (results) {
-            return results;
-        });
+        }));
     }
 
     function getStatus() {
@@ -555,6 +618,8 @@
             running: State.running,
             startedAt: State.startedAt,
             instanceId: State.instanceId,
+            permDenied: State._permDenied,
+            canRun: _canRunCleaners(),
             jobs: {}
         };
         Object.keys(State.jobs).forEach(function (name) {
@@ -577,15 +642,18 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Auto-start بعد 30 ثانية من تحميل الصفحة         */
+    /* Auto-start                                      */
     /* ══════════════════════════════════════════════ */
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(start, 30000);
-    } else {
-        document.addEventListener('DOMContentLoaded', function () {
+    function _autoStart() {
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
             setTimeout(start, 30000);
-        });
+        } else {
+            document.addEventListener('DOMContentLoaded', function () {
+                setTimeout(start, 30000);
+            });
+        }
     }
+    _autoStart();
 
     /* ══════════════════════════════════════════════ */
     /* Exports                                         */
@@ -599,5 +667,5 @@
         CONFIG: CONFIG
     };
 
-    Logger.info('📦 [cleaners.js] loaded | jobs:', Object.keys(State.jobs).length);
+    Logger.info('📦 [cleaners.js v2.1] loaded | jobs:', Object.keys(State.jobs).length);
 })();
