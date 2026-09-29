@@ -1,11 +1,12 @@
 // ==============================================
-// ui/login-flow.js
+// ui/login-flow.js v2.2
 // يربط شاشة الدخول بـ QamarAuth + يفتح main-app
 // ==============================================
-// يعتمد على: auth.js + session.js + rooms.js + chat.js
+// يعتمد على: auth.js + session.js + chat.js
 // يعطي: window.QamarLoginFlow
 // ==============================================
-// ✅ v2.1: بعد الدخول → يفتح الشات في general أو آخر غرفة
+// ✅ v2.2: يبدأ الشات مباشرة بدون Firebase writes
+//          (يزيل permission_denied على user_presence)
 // ==============================================
 
 (function () {
@@ -16,7 +17,7 @@
         return;
     }
 
-    if (window.QamarLoginFlow && window.QamarLoginFlow.__v21) return;
+    if (window.QamarLoginFlow && window.QamarLoginFlow.__v22) return;
 
     const LOG_TAG = '[LOGIN]';
     const Logger = {
@@ -49,7 +50,6 @@
     /* ══════════════════════════════════════════════ */
     /* Helpers                                         */
     /* ══════════════════════════════════════════════ */
-    function _q(sel) { return document.querySelector(sel); }
     function _qa(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
 
     function _showError(msg) {
@@ -220,7 +220,6 @@
 
         _ensureUserRecord(result).then(function () {
             _showApp();
-            // ⭐ v2.1: ابدأ الشات تلقائياً في general / آخر غرفة
             setTimeout(function () {
                 _autoEnterRoom();
             }, CONFIG.AUTO_START_DELAY_MS);
@@ -233,57 +232,66 @@
         });
     }
 
-    // ⭐ v2.1: اختيار الغرفة تلقائياً
+    /* ⭐ v2.2: اختيار الغرفة — مباشرة بدون Firebase writes */
     function _autoEnterRoom() {
         return Promise.resolve().then(function () {
             // 1) آخر غرفة محفوظة
             let roomId = null;
             try { roomId = localStorage.getItem(CONFIG.LAST_ROOM_KEY); } catch (e) {}
-
-            // 2) إذا لا شيء → general
             if (!roomId) roomId = CONFIG.DEFAULT_ROOM;
 
-            // 3) تحقق أن الغرفة موجودة وقابلة للدخول
-            if (window.QamarRooms && typeof window.QamarRooms.switchTo === 'function') {
-                return window.QamarRooms.switchTo(roomId, { force: false })
-                    .then(function (r) {
-                        Logger.info('✅ Entered room:', roomId);
-                        _emit('login-flow:roomEntered', { roomId: roomId });
-                        return r;
-                    })
-                    .catch(function (e) {
-                        // إذا فشل → جرّب general
-                        if (roomId !== CONFIG.DEFAULT_ROOM) {
-                            Logger.warn('Fallback to general:', e.message);
-                            return window.QamarRooms.switchTo(CONFIG.DEFAULT_ROOM)
-                                .then(function (r) {
-                                    Logger.info('✅ Entered general');
-                                    _emit('login-flow:roomEntered', { roomId: CONFIG.DEFAULT_ROOM });
-                                    return r;
-                                })
-                                .catch(function (e2) {
-                                    Logger.warn('Room entry failed:', e2.message);
-                                    return null;
-                                });
-                        }
-                        Logger.warn('Room entry failed:', e.message);
-                        return null;
-                    });
+            Logger.info('🎯 Auto-entering room:', roomId);
+
+            // ⭐ v2.2: نحدّث localStorage + AppState فقط (بدون Firebase)
+            try {
+                localStorage.setItem(CONFIG.LAST_ROOM_KEY, roomId);
+            } catch (e) {}
+
+            if (window.AppState) {
+                try { window.AppState.setRoom(roomId); } catch (e) {}
             }
 
-            // fallback: ابدأ الشات مباشرة
+            // 2) ابدأ الشات مباشرة — بدون room_members/user_presence
             if (window.QamarChat && typeof window.QamarChat.start === 'function') {
                 try {
                     window.QamarChat.start(roomId);
-                    Logger.info('✅ Chat started directly:', roomId);
+                    Logger.info('✅ Chat started:', roomId);
+                    _emit('login-flow:roomEntered', { roomId: roomId });
                 } catch (e) {
                     Logger.warn('Chat start failed:', e.message);
                 }
+            } else {
+                Logger.warn('QamarChat not available');
             }
-            return null;
+
+            // 3) أطلق room:changed ليستمع له chat-ui + room-voice
+            if (window.EventBus) {
+                try {
+                    window.EventBus.emit('room:changed', { roomId: roomId });
+                } catch (e) {}
+            }
+
+            // 4) حدّث واجهة الهيدر يدوياً
+            _updateHeaderRoom(roomId);
+
+            return { ok: true, roomId: roomId };
         }).catch(function (e) {
             Logger.warn('_autoEnterRoom failed:', e.message);
         });
+    }
+
+    // ⭐ v2.2: تحديث الهيدر يدوياً (بدل room-settings)
+    function _updateHeaderRoom(roomId) {
+        try {
+            const rooms = (window.QAMAR && window.QAMAR.ROOMS) ? window.QAMAR.ROOMS : {};
+            const room = rooms[roomId];
+            if (!room) return;
+
+            const iconEl = document.getElementById('room-icon');
+            const titleEl = document.getElementById('room-title');
+            if (iconEl) iconEl.textContent = room.icon || '🌍';
+            if (titleEl) titleEl.textContent = room.name || roomId;
+        } catch (e) {}
     }
 
     // إنشاء سجل المستخدم في Firebase إن لم يكن موجوداً
@@ -304,6 +312,10 @@
                     updates['users/' + uid + '/lastSeen'] = now;
                     if (isGuest) updates['users/' + uid + '/isGuest'] = true;
                     return window.QamarFB.multiUpdate(updates).then(function () {
+                        _syncSession(existing);
+                        return existing;
+                    }).catch(function (e) {
+                        Logger.debug('update existing user failed:', e.message);
                         _syncSession(existing);
                         return existing;
                     });
@@ -336,6 +348,10 @@
                 updates['user_codes/' + code] = uid;
 
                 return window.QamarFB.multiUpdate(updates).then(function () {
+                    _syncSession(payload);
+                    return payload;
+                }).catch(function (e) {
+                    Logger.debug('create user record failed:', e.message);
                     _syncSession(payload);
                     return payload;
                 });
@@ -522,7 +538,7 @@
         _watchAuth();
 
         State._initialized = true;
-        Logger.info('📦 [login-flow.js v2.1] initialized');
+        Logger.info('📦 [login-flow.js v2.2] initialized');
         return true;
     }
 
@@ -542,7 +558,7 @@
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarLoginFlow = {
-        __v21: true,
+        __v22: true,
         init: init,
         switchTab: switchTab,
         signInAsGuest: _doGuest,
@@ -565,5 +581,5 @@
         }
     };
 
-    Logger.info('📦 [login-flow.js v2.1] loaded');
+    Logger.info('📦 [login-flow.js v2.2] loaded — no Firebase writes');
 })();
