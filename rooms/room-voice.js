@@ -1,9 +1,11 @@
 // ==============================================
-// rooms/room-voice.js
+// rooms/room-voice.js v2.1
 // Room voice slots + participants + music
 // ==============================================
 // يعتمد على: firebase.js + constants.js + rooms.js + auth.js + ranks.js
 // يعطي: window.QamarRoomVoice
+// ==============================================
+// ✅ v2.1: لا heartbeat للزوار — يمنع spam permission_denied
 // ==============================================
 
 (function () {
@@ -13,6 +15,8 @@
         console.error('❌ [room-voice] firebase.js not loaded!');
         return;
     }
+
+    if (window.QamarRoomVoice && window.QamarRoomVoice.__v21) return;
 
     const LOG_TAG = '[RV]';
     const Logger = {
@@ -28,9 +32,9 @@
     const CONFIG = {
         ROOT: 'room_voice',
         HEARTBEAT_MS: 20000,
-        STALE_PARTICIPANT_MS: 90000,       // 90s → stale (3 heartbeats)
-        MIN_KICK_LEVEL: 65,                // 65+ يستطيع طرد من المايك
-        MUSIC_AUTO_CLEAR_MS: 60 * 60 * 1000 // ساعة — cleaners يحذف
+        STALE_PARTICIPANT_MS: 90000,
+        MIN_KICK_LEVEL: 65,
+        MUSIC_AUTO_CLEAR_MS: 60 * 60 * 1000
     };
 
     /* ══════════════════════════════════════════════ */
@@ -38,10 +42,10 @@
     /* ══════════════════════════════════════════════ */
     const State = {
         currentRoom: null,
-        slots: [],                  // [{uid, name, avatar, muted, speaking, music, ...}]
-        participants: {},           // { uid: {at, ...} }
-        personalMutes: {},          // { uid: true } — كتم شخصي (محلي)
-        personalMutedAll: false,    // كتم الكل
+        slots: [],
+        participants: {},
+        personalMutes: {},
+        personalMutedAll: false,
         micCount: 0,
         heartbeatTimer: null,
         slotsListener: null,
@@ -50,7 +54,8 @@
         _initialized: false,
         barEl: null,
         contextMenuEl: null,
-        contextMenuCleanup: null
+        contextMenuCleanup: null,
+        _permDenied: false
     };
 
     /* ══════════════════════════════════════════════ */
@@ -108,6 +113,15 @@
         return _isKing() || _myLevel() >= CONFIG.MIN_KICK_LEVEL;
     }
 
+    // ⭐ v2.1: هل نحن مؤهلون للكتابة؟
+    function _canWrite() {
+        if (!window.auth || !window.auth.currentUser) return false;
+        if (State._permDenied) return false;
+        // الزوار لا يكتبون presence
+        if (_isGuest()) return false;
+        return true;
+    }
+
     function _getRoomConfig(roomId) {
         const base = (window.QAMAR && window.QAMAR.ROOMS) ? window.QAMAR.ROOMS[roomId] : null;
         if (base) return base;
@@ -130,7 +144,6 @@
     function getSlots(roomId) {
         roomId = roomId || State.currentRoom;
         if (!roomId) return [];
-        // وسّع القائمة لتشمل كل المايكات (حتى الفارغة)
         const total = State.micCount || _getMicCount(roomId);
         const out = [];
         for (let i = 0; i < total; i++) {
@@ -176,12 +189,12 @@
             const uid = _getCurrentUid();
             if (!uid) throw new Error('غير مسجل');
             if (!roomId) throw new Error('لا توجد غرفة');
+            if (!_canWrite()) throw new Error('ميزة المايك للمسجلين فقط');
 
             const micCount = State.micCount || _getMicCount(roomId);
             if (micCount === 0) throw new Error('لا يوجد مايك في هذه الغرفة');
 
             if (slotIndex === undefined || slotIndex === null) {
-                // ابحث عن أول مايك فارغ
                 const all = getSlots(roomId);
                 for (let i = 0; i < all.length; i++) {
                     if (!all[i].uid) { slotIndex = i; break; }
@@ -196,10 +209,8 @@
                 throw new Error('رقم المايك غير صحيح');
             }
 
-            // هل أنا في مايك آخر؟
             const mySlot = findUserSlot(roomId, uid);
             if (mySlot !== -1 && mySlot !== slotIndex) {
-                // انقل نفسي (احذف القديم)
                 return window.QamarFB.remove(CONFIG.ROOT + '/' + roomId + '/speakers/' + mySlot)
                     .then(function () { return _doJoin(roomId, slotIndex, uid); });
             }
@@ -207,12 +218,11 @@
                 return { ok: true, alreadyIn: true, slot: slotIndex };
             }
 
-            // تحقق أن المايك فارغ (transaction)
             return window.QamarFB.transaction(
                 CONFIG.ROOT + '/' + roomId + '/speakers/' + slotIndex,
                 function (cur) {
                     if (cur && cur.uid && cur.uid !== uid) {
-                        return undefined; // abort
+                        return undefined;
                     }
                     return _buildSpeakerPayload(uid);
                 }
@@ -224,7 +234,6 @@
     }
 
     function _doJoin(roomId, slotIndex, uid) {
-        // أطلق حدث → voice-system.js سيتصل
         _emit('voice:joined', { roomId: roomId, slot: slotIndex, uid: uid });
 
         if (window.EventBus) {
@@ -235,7 +244,6 @@
             } catch (e) {}
         }
 
-        // hook — voice-system.js
         if (window.QamarVoiceSystem && typeof window.QamarVoiceSystem.connect === 'function') {
             try { window.QamarVoiceSystem.connect(roomId, slotIndex); } catch (e) {
                 Logger.warn('voice-system connect failed:', e.message);
@@ -257,7 +265,7 @@
             rankLevel: Number(u.rankLevel) || 50,
             muted: false,
             speaking: false,
-            mode: 'voice', // voice | music
+            mode: 'voice',
             music: null,
             joinedAt: window.QamarFB.serverTime()
         };
@@ -294,7 +302,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Mute self / unmute self                         */
+    /* Mute self                                       */
     /* ══════════════════════════════════════════════ */
     function muteSelf(roomId) {
         roomId = roomId || State.currentRoom;
@@ -344,7 +352,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Mute user (65+) / kick from mic (65+)           */
+    /* Moderation                                      */
     /* ══════════════════════════════════════════════ */
     function muteUser(roomId, targetUid) {
         return Promise.resolve().then(function () {
@@ -356,7 +364,6 @@
             const slot = findUserSlot(roomId, targetUid);
             if (slot === -1) throw new Error('ليس في المايك');
 
-            // فحص الرتبة
             const target = State.slots[slot] || {};
             const targetLvl = Number(target.rankLevel) || 0;
             if (!_isKing() && targetLvl >= _myLevel()) {
@@ -415,7 +422,6 @@
 
             return window.QamarFB.remove(CONFIG.ROOT + '/' + roomId + '/speakers/' + slot)
                 .then(function () {
-                    // إشعار المستخدم
                     window.QamarFB.push('user_notifications/' + targetUid, {
                         type: 'mic_kick',
                         roomId: roomId,
@@ -442,7 +448,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Personal mutes (كل مستمع يكتم لنفسه)           */
+    /* Personal mutes                                  */
     /* ══════════════════════════════════════════════ */
     function muteSpeakerForMe(uid) {
         if (!uid) return;
@@ -484,16 +490,14 @@
     }
 
     function _applyPersonalMutes() {
-        // hook — voice-system.js
         if (window.QamarVoiceSystem && typeof window.QamarVoiceSystem.applyMutes === 'function') {
             try { window.QamarVoiceSystem.applyMutes(State.personalMutes, State.personalMutedAll); } catch (e) {}
         }
-        // إعادة رسم الشريط
         _renderBar();
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Music in room                                   */
+    /* Music                                           */
     /* ══════════════════════════════════════════════ */
     function setMusic(roomId, url, title) {
         return Promise.resolve().then(function () {
@@ -524,7 +528,6 @@
 
             let slot = slotIndex;
             if (slot === undefined || slot === null) {
-                // ابحث عن المايك الذي فيه موسيقى
                 const all = getSlots(roomId);
                 for (let i = 0; i < all.length; i++) {
                     if (all[i].uid && all[i].music) { slot = i; break; }
@@ -532,7 +535,6 @@
             }
             if (slot === undefined || slot === null) return { ok: true, noMusic: true };
 
-            // هل أنا صاحب الموسيقى أو 65+؟
             const s = State.slots[slot];
             if (!s) return { ok: true };
             const isMine = s.uid === _getCurrentUid();
@@ -550,11 +552,16 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Participants heartbeat                          */
+    /* ⭐ v2.1: Heartbeat — للمسجلين فقط              */
     /* ══════════════════════════════════════════════ */
     function _startHeartbeat() {
+        // ⭐ v2.1: لا heartbeat للزوار
+        if (!_canWrite()) {
+            Logger.debug('Heartbeat skipped (no permission)');
+            return;
+        }
         _stopHeartbeat();
-        _heartbeatTick(); // فوري
+        _heartbeatTick();
         State.heartbeatTimer = setInterval(_heartbeatTick, CONFIG.HEARTBEAT_MS);
     }
 
@@ -569,6 +576,8 @@
         const uid = _getCurrentUid();
         const roomId = State.currentRoom;
         if (!uid || !roomId) return;
+        // ⭐ v2.1: لا ترسل إذا لا صلاحية
+        if (!_canWrite()) return;
 
         const path = CONFIG.ROOT + '/' + roomId + '/participants/' + uid;
         const payload = {
@@ -577,13 +586,21 @@
         };
 
         window.QamarFB.set(path, payload).catch(function (e) {
-            Logger.warn('heartbeat failed:', e.message);
+            const msg = (e && e.message) || '';
+            if (msg.indexOf('permission') !== -1 || msg.indexOf('PERMISSION') !== -1) {
+                State._permDenied = true;
+                _stopHeartbeat();
+                Logger.info('🔒 Heartbeat disabled (permission denied)');
+            } else {
+                Logger.warn('heartbeat failed:', msg);
+            }
         });
     }
 
-    // onDisconnect — يُستدعى عند الاشتراك
     function _bindOnDisconnect(roomId) {
         if (!roomId || !window.QamarFB || !window.QamarFB.ref) return;
+        // ⭐ v2.1: لا نُسجّل للزوار
+        if (!_canWrite()) return;
         try {
             const uid = _getCurrentUid();
             if (!uid) return;
@@ -591,7 +608,6 @@
             if (r && r.onDisconnect) {
                 r.onDisconnect().remove();
             }
-            // أيضًا للمتحدث — احذف المايك
             const mySlot = findUserSlot(roomId, uid);
             if (mySlot !== -1) {
                 const sr = window.QamarFB.ref(CONFIG.ROOT + '/' + roomId + '/speakers/' + mySlot);
@@ -609,7 +625,6 @@
         _detachListeners();
         if (!roomId) return;
 
-        // speakers
         State.slotsListener = window.QamarFB.onValue(
             CONFIG.ROOT + '/' + roomId + '/speakers',
             function (data) {
@@ -627,12 +642,10 @@
             function () {}
         );
 
-        // participants
         State.participantsListener = window.QamarFB.onValue(
             CONFIG.ROOT + '/' + roomId + '/participants',
             function (data) {
                 State.participants = data || {};
-                // احذف القديم (stale)
                 _pruneStaleParticipants();
             },
             function () {}
@@ -651,6 +664,7 @@
     }
 
     function _pruneStaleParticipants() {
+        if (!_canWrite()) return;
         const now = Date.now();
         const updates = {};
         let n = 0;
@@ -668,7 +682,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Enter / Leave room (voice)                      */
+    /* Enter / Leave room                              */
     /* ══════════════════════════════════════════════ */
     function enterRoom(roomId) {
         if (!roomId) return Promise.resolve({ ok: false });
@@ -688,10 +702,9 @@
     function leaveRoom() {
         return leaveAll().then(function () {
             _detachListeners();
-            // احذف من participants
             const uid = _getCurrentUid();
             const roomId = State.currentRoom;
-            if (uid && roomId) {
+            if (uid && roomId && _canWrite()) {
                 window.QamarFB.remove(CONFIG.ROOT + '/' + roomId + '/participants/' + uid).catch(function () {});
             }
             State.currentRoom = null;
@@ -728,7 +741,6 @@
             'overflow-x:auto;direction:rtl;align-items:center;' +
             '-webkit-overflow-scrolling:touch;';
 
-        // أدخله كأول عنصر
         if (parent.firstChild) parent.insertBefore(bar, parent.firstChild);
         else parent.appendChild(bar);
 
@@ -782,20 +794,12 @@
             el.style.background = 'rgba(212,175,55,0.08)';
             el.style.borderColor = 'rgba(212,175,55,0.3)';
         }
-
         if (isSpeaking) {
             el.style.boxShadow = '0 0 0 2px #ffd700, 0 0 12px rgba(255,215,0,0.6)';
         }
+        if (isMuted) el.style.opacity = '0.55';
+        if (personalMuted) el.style.filter = 'grayscale(0.5)';
 
-        if (isMuted) {
-            el.style.opacity = '0.55';
-        }
-
-        if (personalMuted) {
-            el.style.filter = 'grayscale(0.5)';
-        }
-
-        // Avatar
         const av = document.createElement('img');
         av.src = slot.avatar || (window.getDefaultAvatar
             ? window.getDefaultAvatar(slot.name || 'م')
@@ -808,7 +812,6 @@
         };
         el.appendChild(av);
 
-        // Name (اختياري — أول 6 أحرف)
         if (slot.uid && slot.name) {
             const nm = document.createElement('div');
             nm.style.cssText = 'font-size:9px;color:#f3f4f6;margin-top:2px;' +
@@ -817,7 +820,6 @@
             el.appendChild(nm);
         }
 
-        // Status badges
         if (isMuted) {
             const b = document.createElement('div');
             b.textContent = '🔇';
@@ -837,13 +839,10 @@
             el.appendChild(b);
         }
 
-        // Click
         el.addEventListener('click', function (e) {
             e.stopPropagation();
             _onSlotClick(slot, e);
         });
-
-        // Right-click → منع القائمة الافتراضية
         el.addEventListener('contextmenu', function (e) {
             e.preventDefault();
             _onSlotClick(slot, e);
@@ -862,7 +861,6 @@
         const isMine = slot.uid === me;
         const isEmpty = !slot.uid;
 
-        // إذا فاضي → انضم مباشرة
         if (isEmpty) {
             joinMic(State.currentRoom, slot.slot).catch(function (e) {
                 _toast(e.message || 'تعذر الدخول');
@@ -870,7 +868,6 @@
             return;
         }
 
-        // إذا أنا فيه → قائمة (كتم/خروج/موسيقى)
         if (isMine) {
             _openSlotMenu(slot, ev, [
                 { icon: slot.muted ? '🔊' : '🔇', label: slot.muted ? 'فتح المايك' : 'كتم المايك', action: 'toggleMute' },
@@ -880,7 +877,6 @@
             return;
         }
 
-        // شخص آخر → قائمة (كتم شخصي/طرد)
         const actions = [
             { icon: isSpeakerMutedForMe(slot.uid) ? '🔔' : '🔕',
               label: isSpeakerMutedForMe(slot.uid) ? 'إلغاء كتمه لي' : 'كتمه لي',
@@ -1021,7 +1017,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* External hooks — من voice-system.js             */
+    /* External hooks                                  */
     /* ══════════════════════════════════════════════ */
     function updateSpeakingState(uid, speaking) {
         if (!uid || !State.currentRoom) return;
@@ -1047,8 +1043,9 @@
         State._initialized = true;
 
         if (window.EventBus) {
-            window.EventBus.on('room:changed', function (payload) {
-                const roomId = (payload && payload.roomId) || payload;
+            window.EventBus.on('room:changed', function (p) {
+                // ⭐ v2.1: يقبل نص أو كائن
+                const roomId = (typeof p === 'string') ? p : (p && p.roomId);
                 if (roomId) enterRoom(roomId);
             });
             window.EventBus.on('auth:signout', function () {
@@ -1056,13 +1053,12 @@
             });
         }
 
-        // إذا كان المستخدم في غرفة من قبل → ادخل
         if (window.QamarRooms && typeof window.QamarRooms.getCurrent === 'function') {
             const r = window.QamarRooms.getCurrent();
             if (r) setTimeout(function () { enterRoom(r); }, 500);
         }
 
-        Logger.info('📦 [room-voice.js] initialized');
+        Logger.info('📦 [room-voice.js v2.1] initialized');
     }
 
     if (window.EventBus) {
@@ -1074,7 +1070,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Status / Debug                                  */
+    /* Status                                          */
     /* ══════════════════════════════════════════════ */
     function getStatus() {
         return {
@@ -1088,7 +1084,8 @@
             personalMutesCount: Object.keys(State.personalMutes).length,
             personalMutedAll: State.personalMutedAll,
             canKickFromMic: _canKickFromMic(),
-            heartbeatActive: !!State.heartbeatTimer
+            heartbeatActive: !!State.heartbeatTimer,
+            permDenied: State._permDenied
         };
     }
 
@@ -1096,62 +1093,41 @@
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     const QamarRoomVoice = {
+        __v21: true,
         CONFIG: CONFIG,
-
-        // Lifecycle
         enterRoom: enterRoom,
         leaveRoom: leaveRoom,
-
-        // Slots (read)
         getSlots: getSlots,
         getSlot: getSlot,
         isSlotFree: isSlotFree,
         findUserSlot: findUserSlot,
         isSpeaker: isSpeaker,
         getSpeakers: getSpeakers,
-
-        // Slots (write)
         joinMic: joinMic,
         leaveMic: leaveMic,
         leaveAll: leaveAll,
-
-        // Mute self
         muteSelf: muteSelf,
         unmuteSelf: unmuteSelf,
         toggleSelfMute: toggleSelfMute,
-
-        // Moderation (65+)
         muteUser: muteUser,
         unmuteUser: unmuteUser,
         kickFromMic: kickFromMic,
-
-        // Personal mute (كل مستمع)
         muteSpeakerForMe: muteSpeakerForMe,
         unmuteSpeakerForMe: unmuteSpeakerForMe,
         toggleSpeakerForMe: toggleSpeakerForMe,
         muteAllForMe: muteAllForMe,
         unmuteAllForMe: unmuteAllForMe,
         isSpeakerMutedForMe: isSpeakerMutedForMe,
-
-        // Music
         setMusic: setMusic,
         clearMusic: clearMusic,
-
-        // UI hooks
         render: _renderBar,
-
-        // External hooks (voice-system)
         updateSpeakingState: updateSpeakingState,
         updateMuteState: updateMuteState,
-
-        // Events
         onVoiceEvent: onVoiceEvent,
-
-        // Debug
         getStatus: getStatus
     };
 
     window.QamarRoomVoice = QamarRoomVoice;
 
-    Logger.info('📦 [room-voice.js] loaded | heartbeat:', CONFIG.HEARTBEAT_MS, 'ms');
+    Logger.info('📦 [room-voice.js v2.1] loaded | no-guest-heartbeat');
 })();
