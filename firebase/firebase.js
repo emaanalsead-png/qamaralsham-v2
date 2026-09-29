@@ -32,7 +32,6 @@
     /* Sanitizers                                     */
     /* ══════════════════════════════════════════════ */
 
-    // Firebase keys لا يمكن أن تحتوي على: . # $ [ ] /
     function escapeKey(key) {
         if (key === null || key === undefined) return '';
         return String(key)
@@ -44,7 +43,6 @@
             .replace(/\//g, '_SL_');
     }
 
-    // البريد الإلكتروني يحتاج ترميز إضافي لـ @
     function encodeEmail(email) {
         if (!email) return '';
         return String(email)
@@ -57,7 +55,6 @@
             .replace(/\//g, '_SL_');
     }
 
-    // عكس encodeEmail (للقراءة)
     function decodeEmail(encoded) {
         if (!encoded) return '';
         return String(encoded)
@@ -70,7 +67,6 @@
             .replace(/_SL_/g, '/');
     }
 
-    // بناء مسار من عدة أجزاء — ينظف كل جزء
     function buildPath() {
         const parts = Array.prototype.slice.call(arguments);
         return parts
@@ -83,30 +79,14 @@
     /* Path helpers                                    */
     /* ══════════════════════════════════════════════ */
     const Paths = {
-        user: function (uid) {
-            return buildPath('users', uid);
-        },
-        userField: function (uid, field) {
-            return buildPath('users', uid, field);
-        },
-        userCode: function (code) {
-            return buildPath('user_codes', code);
-        },
-        userName: function (name) {
-            return buildPath('user_names', name);
-        },
-        userPresence: function (uid) {
-            return buildPath('user_presence', uid);
-        },
-        roomMessages: function (roomId) {
-            return buildPath('room_messages', roomId);
-        },
-        roomSettings: function (roomId) {
-            return buildPath('room_settings', roomId);
-        },
-        roomAlert: function (roomId) {
-            return buildPath('room_alerts', roomId, 'current');
-        },
+        user: function (uid) { return buildPath('users', uid); },
+        userField: function (uid, field) { return buildPath('users', uid, field); },
+        userCode: function (code) { return buildPath('user_codes', code); },
+        userName: function (name) { return buildPath('user_names', name); },
+        userPresence: function (uid) { return buildPath('user_presence', uid); },
+        roomMessages: function (roomId) { return buildPath('room_messages', roomId); },
+        roomSettings: function (roomId) { return buildPath('room_settings', roomId); },
+        roomAlert: function (roomId) { return buildPath('room_alerts', roomId, 'current'); },
         pm: function (uidA, uidB, msgId) {
             const key = [uidA, uidB].sort().join('_');
             return buildPath('user_private_messages', key, msgId);
@@ -120,15 +100,9 @@
         ipRegistry: function (ipHash, uid) {
             return buildPath('ip_registry', ipHash, uid);
         },
-        auditLog: function (rid) {
-            return buildPath('audit_log', rid);
-        },
-        story: function (uid, sid) {
-            return buildPath('stories', uid, sid);
-        },
-        botMemory: function (key) {
-            return buildPath('bot_memory', key);
-        }
+        auditLog: function (rid) { return buildPath('audit_log', rid); },
+        story: function (uid, sid) { return buildPath('stories', uid, sid); },
+        botMemory: function (key) { return buildPath('bot_memory', key); }
     };
 
     /* ══════════════════════════════════════════════ */
@@ -210,7 +184,6 @@
     /* READ operations                                 */
     /* ══════════════════════════════════════════════ */
 
-    // get(path) → Promise<value|null>
     function get(path, timeoutMs) {
         return _withTimeout(
             ref(path).once('value').then(function (snap) {
@@ -221,7 +194,6 @@
         );
     }
 
-    // exists(path) → Promise<bool>
     function exists(path, timeoutMs) {
         return _withTimeout(
             ref(path).once('value').then(function (snap) {
@@ -232,7 +204,6 @@
         );
     }
 
-    // children(path) → Promise<object> (مفاتيح → قيم)
     function children(path, timeoutMs) {
         return _withTimeout(
             ref(path).once('value').then(function (snap) {
@@ -243,7 +214,6 @@
         );
     }
 
-    // orderByChild + limitToLast — للرسائل
     function getLatest(path, limit, timeoutMs) {
         limit = limit || 50;
         return _withTimeout(
@@ -259,7 +229,6 @@
         );
     }
 
-    // query — مخصص
     function query(path, options, timeoutMs) {
         options = options || {};
         let q = ref(path);
@@ -292,7 +261,6 @@
     /* WRITE operations                                */
     /* ══════════════════════════════════════════════ */
 
-    // set(path, value) → Promise<void>
     function set(path, value, timeoutMs) {
         return _withTimeout(
             ref(path).set(value),
@@ -301,7 +269,6 @@
         );
     }
 
-    // update(path, updates) — تحديث جزئي (لا يمس الحقول الأخرى)
     function update(path, updates, timeoutMs) {
         return _withTimeout(
             ref(path).update(updates),
@@ -310,7 +277,6 @@
         );
     }
 
-    // push(path, value) → Promise<string> (المفتاح الجديد)
     function push(path, value, timeoutMs) {
         const newRef = ref(path).push();
         return _withTimeout(
@@ -322,7 +288,6 @@
         );
     }
 
-    // remove(path)
     function remove(path, timeoutMs) {
         return _withTimeout(
             ref(path).remove(),
@@ -331,7 +296,6 @@
         );
     }
 
-    // multiUpdate({path1: val1, path2: val2}) — تحديث ذرّي
     function multiUpdate(updates, timeoutMs) {
         if (!updates || typeof updates !== 'object') {
             return Promise.reject(new Error('multiUpdate: invalid updates'));
@@ -344,7 +308,6 @@
         );
     }
 
-    // transaction(path, fn) — معاملة آمنة
     function transaction(path, fn, timeoutMs) {
         return _withTimeout(
             ref(path).transaction(fn).then(function (result) {
@@ -360,10 +323,8 @@
 
     /* ══════════════════════════════════════════════ */
     /* LISTEN operations                               */
-    /* كل دالة ترجع ref مع .off() لتنظيف الاستماع      */
     /* ══════════════════════════════════════════════ */
 
-    // onValue(path, cb, errCb) → ref
     function onValue(path, cb, errCb) {
         const r = ref(path);
         const handler = r.on('value', function (snap) {
@@ -379,7 +340,6 @@
         };
     }
 
-    // onChildAdded(path, cb, errCb) → ref
     function onChildAdded(path, cb, errCb) {
         const r = ref(path);
         const handler = r.on('child_added', function (snap) {
@@ -395,7 +355,6 @@
         };
     }
 
-    // onChildChanged(path, cb, errCb) → ref
     function onChildChanged(path, cb, errCb) {
         const r = ref(path);
         const handler = r.on('child_changed', function (snap) {
@@ -411,7 +370,6 @@
         };
     }
 
-    // onChildRemoved(path, cb, errCb) → ref
     function onChildRemoved(path, cb, errCb) {
         const r = ref(path);
         const handler = r.on('child_removed', function (snap) {
@@ -427,7 +385,6 @@
         };
     }
 
-    // onLimitToLast — للرسائل الأخيرة
     function onLatest(path, limit, cb, errCb) {
         limit = limit || 50;
         const r = ref(path).orderByChild('time').limitToLast(limit);
@@ -452,17 +409,31 @@
         return firebase.database.ServerValue.TIMESTAMP;
     }
 
+    // ⭐ FIXED: TDZ bug — Firebase fires callback synchronously for .info paths
     function serverOffset(path) {
-        // يقيس الفرق بين جهاز المستخدم والسيرفر
         path = path || '.info/serverTimeOffset';
         return new Promise(function (resolve) {
             const r = _getDb().ref(path);
-            const handler = r.on('value', function (snap) {
-                r.off('value', handler);
-                resolve(snap.val() || 0);
-            });
+            let resolved = false;
+            let handler = null;
+
+            const finish = function (value) {
+                if (resolved) return;
+                resolved = true;
+                if (handler) {
+                    try { r.off('value', handler); } catch (e) {}
+                }
+                resolve(value);
+            };
+
+            handler = function (snap) {
+                finish(snap.val() || 0);
+            };
+
+            r.on('value', handler);
+
             // timeout احتياطي
-            setTimeout(function () { resolve(0); }, 3000);
+            setTimeout(function () { finish(0); }, 3000);
         });
     }
 
@@ -484,14 +455,12 @@
     /* Batch helpers                                   */
     /* ══════════════════════════════════════════════ */
 
-    // حذف عدة مسارات دفعة واحدة
     function removeMany(paths, timeoutMs) {
         const updates = {};
         (paths || []).forEach(function (p) { updates[p] = null; });
         return multiUpdate(updates, timeoutMs);
     }
 
-    // setMany — كتابة عدة مسارات دفعة واحدة
     function setMany(map, timeoutMs) {
         return multiUpdate(map, timeoutMs);
     }
@@ -545,7 +514,7 @@
         // Path helpers
         Paths: Paths,
 
-        // Logger (للاستخدام الخارجي)
+        // Logger
         Logger: Logger
     };
 
