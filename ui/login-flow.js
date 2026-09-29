@@ -2,8 +2,10 @@
 // ui/login-flow.js
 // يربط شاشة الدخول بـ QamarAuth + يفتح main-app
 // ==============================================
-// يعتمد على: auth.js + session.js + identity.js + EventBus
+// يعتمد على: auth.js + session.js + rooms.js + chat.js
 // يعطي: window.QamarLoginFlow
+// ==============================================
+// ✅ v2.1: بعد الدخول → يفتح الشات في general أو آخر غرفة
 // ==============================================
 
 (function () {
@@ -14,7 +16,7 @@
         return;
     }
 
-    if (window.QamarLoginFlow) return;
+    if (window.QamarLoginFlow && window.QamarLoginFlow.__v21) return;
 
     const LOG_TAG = '[LOGIN]';
     const Logger = {
@@ -22,6 +24,15 @@
         info:  function () { console.log.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); },
         warn:  function () { console.warn.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); },
         error: function () { console.error.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); }
+    };
+
+    /* ══════════════════════════════════════════════ */
+    /* Config                                          */
+    /* ══════════════════════════════════════════════ */
+    const CONFIG = {
+        DEFAULT_ROOM: 'general',
+        LAST_ROOM_KEY: 'qamar_last_room',
+        AUTO_START_DELAY_MS: 400
     };
 
     /* ══════════════════════════════════════════════ */
@@ -88,7 +99,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* التبويبات (زائر/عضو/تسجيل)                       */
+    /* التبويبات                                       */
     /* ══════════════════════════════════════════════ */
     function switchTab(tabId) {
         if (!tabId) return;
@@ -207,23 +218,71 @@
     function _onAuthSuccess(result, options) {
         options = options || {};
 
-        // إذا كان هذا تسجيل جديد لزائر → أنشئ السجل في users/{uid}
-        if (options.isRegister && result && result.uid) {
-            _ensureUserRecord(result).then(function () {
-                _showApp();
-            }).catch(function (e) {
-                Logger.warn('ensureUserRecord failed:', e.message);
-                _showApp();
-            });
-            return;
-        }
-
-        // دخول عادي → أنشئ/حدّث السجل + أظهر التطبيق
         _ensureUserRecord(result).then(function () {
             _showApp();
+            // ⭐ v2.1: ابدأ الشات تلقائياً في general / آخر غرفة
+            setTimeout(function () {
+                _autoEnterRoom();
+            }, CONFIG.AUTO_START_DELAY_MS);
         }).catch(function (e) {
             Logger.warn('ensureUserRecord failed:', e.message);
             _showApp();
+            setTimeout(function () {
+                _autoEnterRoom();
+            }, CONFIG.AUTO_START_DELAY_MS);
+        });
+    }
+
+    // ⭐ v2.1: اختيار الغرفة تلقائياً
+    function _autoEnterRoom() {
+        return Promise.resolve().then(function () {
+            // 1) آخر غرفة محفوظة
+            let roomId = null;
+            try { roomId = localStorage.getItem(CONFIG.LAST_ROOM_KEY); } catch (e) {}
+
+            // 2) إذا لا شيء → general
+            if (!roomId) roomId = CONFIG.DEFAULT_ROOM;
+
+            // 3) تحقق أن الغرفة موجودة وقابلة للدخول
+            if (window.QamarRooms && typeof window.QamarRooms.switchTo === 'function') {
+                return window.QamarRooms.switchTo(roomId, { force: false })
+                    .then(function (r) {
+                        Logger.info('✅ Entered room:', roomId);
+                        _emit('login-flow:roomEntered', { roomId: roomId });
+                        return r;
+                    })
+                    .catch(function (e) {
+                        // إذا فشل → جرّب general
+                        if (roomId !== CONFIG.DEFAULT_ROOM) {
+                            Logger.warn('Fallback to general:', e.message);
+                            return window.QamarRooms.switchTo(CONFIG.DEFAULT_ROOM)
+                                .then(function (r) {
+                                    Logger.info('✅ Entered general');
+                                    _emit('login-flow:roomEntered', { roomId: CONFIG.DEFAULT_ROOM });
+                                    return r;
+                                })
+                                .catch(function (e2) {
+                                    Logger.warn('Room entry failed:', e2.message);
+                                    return null;
+                                });
+                        }
+                        Logger.warn('Room entry failed:', e.message);
+                        return null;
+                    });
+            }
+
+            // fallback: ابدأ الشات مباشرة
+            if (window.QamarChat && typeof window.QamarChat.start === 'function') {
+                try {
+                    window.QamarChat.start(roomId);
+                    Logger.info('✅ Chat started directly:', roomId);
+                } catch (e) {
+                    Logger.warn('Chat start failed:', e.message);
+                }
+            }
+            return null;
+        }).catch(function (e) {
+            Logger.warn('_autoEnterRoom failed:', e.message);
         });
     }
 
@@ -232,6 +291,7 @@
         return Promise.resolve().then(function () {
             const uid = authResult.uid;
             if (!uid) return null;
+            if (!window.QamarFB) return null;
 
             return window.QamarFB.get('users/' + uid).then(function (existing) {
                 const now = window.QamarFB.serverTime();
@@ -240,7 +300,6 @@
                 const fallbackName = 'زائر-' + uid.substring(0, 4);
 
                 if (existing) {
-                    // حدّث حقول أساسية فقط
                     const updates = {};
                     updates['users/' + uid + '/lastSeen'] = now;
                     if (isGuest) updates['users/' + uid + '/isGuest'] = true;
@@ -250,7 +309,6 @@
                     });
                 }
 
-                // مستخدم جديد → سجل كامل
                 const name = u.displayName || (isGuest ? fallbackName : 'عضو جديد');
                 const code = _generateCode(name, uid);
 
@@ -260,7 +318,7 @@
                     code: code,
                     avatar: null,
                     bio: '',
-                    rank: isGuest ? 'User' : 'User',
+                    rank: 'User',
                     rankLevel: 50,
                     isGuest: isGuest,
                     isEmailUser: !isGuest,
@@ -283,7 +341,6 @@
                 });
             });
         }).catch(function (e) {
-            // إذا فشل (permission_denied مثلاً) → لا نمنع الدخول
             Logger.warn('ensureUserRecord:', e.message);
             return null;
         });
@@ -335,7 +392,6 @@
             setTimeout(function () { app.style.opacity = '1'; }, 50);
         }
 
-        // اخفِ لودر boot إن وُجد
         if (window.QamarBoot && typeof window.QamarBoot.hideLoader === 'function') {
             try { window.QamarBoot.hideLoader(); } catch (e) {}
         }
@@ -385,12 +441,10 @@
             loginScreen: document.getElementById('login-screen'),
             mainApp: document.getElementById('main-app'),
             error: document.getElementById('ls-error'),
-
             guestBtn: document.getElementById('ls-guest-btn'),
             loginBtn: document.getElementById('ls-login-btn'),
             registerBtn: document.getElementById('ls-register-btn'),
             forgotBtn: document.getElementById('ls-forgot-btn'),
-
             email: document.getElementById('ls-email'),
             password: document.getElementById('ls-password'),
             regEmail: document.getElementById('ls-reg-email'),
@@ -402,30 +456,25 @@
     function _bindActions() {
         if (State.els.guestBtn) {
             State.els.guestBtn.addEventListener('click', function (e) {
-                e.preventDefault();
-                _doGuest();
+                e.preventDefault(); _doGuest();
             });
         }
         if (State.els.loginBtn) {
             State.els.loginBtn.addEventListener('click', function (e) {
-                e.preventDefault();
-                _doLogin();
+                e.preventDefault(); _doLogin();
             });
         }
         if (State.els.registerBtn) {
             State.els.registerBtn.addEventListener('click', function (e) {
-                e.preventDefault();
-                _doRegister();
+                e.preventDefault(); _doRegister();
             });
         }
         if (State.els.forgotBtn) {
             State.els.forgotBtn.addEventListener('click', function (e) {
-                e.preventDefault();
-                _doForgot();
+                e.preventDefault(); _doForgot();
             });
         }
 
-        // Enter يرسل النموذج
         [State.els.email, State.els.password].forEach(function (el) {
             if (el) el.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') { e.preventDefault(); _doLogin(); }
@@ -445,10 +494,10 @@
         if (!window.QamarAuth || !window.QamarAuth.onAuthChange) return;
         window.QamarAuth.onAuthChange(function (payload) {
             if (payload && payload.isLoggedIn) {
-                // إذا التطبيق مخفي → أظهره
                 const login = document.getElementById('login-screen');
                 if (login && !login.classList.contains('hidden')) {
                     _showApp();
+                    setTimeout(function () { _autoEnterRoom(); }, CONFIG.AUTO_START_DELAY_MS);
                 }
             } else {
                 _showLogin();
@@ -473,7 +522,7 @@
         _watchAuth();
 
         State._initialized = true;
-        Logger.info('📦 [login-flow.js] initialized');
+        Logger.info('📦 [login-flow.js v2.1] initialized');
         return true;
     }
 
@@ -493,6 +542,7 @@
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarLoginFlow = {
+        __v21: true,
         init: init,
         switchTab: switchTab,
         signInAsGuest: _doGuest,
@@ -501,6 +551,7 @@
         forgotPassword: _doForgot,
         showApp: _showApp,
         showLogin: _showLogin,
+        enterRoom: _autoEnterRoom,
         onLoginEvent: onLoginEvent,
         getStatus: function () {
             return {
@@ -508,10 +559,11 @@
                 busy: State.busy,
                 hasGuestBtn: !!State.els.guestBtn,
                 hasLoginBtn: !!State.els.loginBtn,
-                hasRegisterBtn: !!State.els.registerBtn
+                hasRegisterBtn: !!State.els.registerBtn,
+                defaultRoom: CONFIG.DEFAULT_ROOM
             };
         }
     };
 
-    Logger.info('📦 [login-flow.js] loaded');
+    Logger.info('📦 [login-flow.js v2.1] loaded');
 })();
