@@ -341,7 +341,7 @@
             senderAvatar: avatar,
             senderColor: def.color,
             senderRank: 'Bot',
-            senderRankLevel: 0,
+            senderRankLevel: 99,
             senderFrame: null,
             senderNameColor: def.color,
             senderNameGradient: null,
