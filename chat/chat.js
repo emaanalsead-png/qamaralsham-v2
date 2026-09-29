@@ -1,9 +1,14 @@
 // ==============================================
-// chat/chat.js
-// Chat core — send / receive / delete messages
+// chat/chat.js v2.1 — fixed room:changed payload + safe catch
 // ==============================================
 // يعتمد على: firebase.js + auth.js + session.js + optimizers.js + constants.js
 // يعطي: window.QamarChat
+// ==============================================
+// ⭐ v2.1:
+//   1. أُزيل listener لـ room:changed (rooms.js يستدعي start مباشرة)
+//   2. safe promise chain (لا .catch على undefined)
+//   3. _refreshUserIndex محمي
+//   4. تشخيص أفضل
 // ==============================================
 
 (function () {
@@ -22,36 +27,27 @@
         error: function () { console.error.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); }
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* Config                                          */
-    /* ══════════════════════════════════════════════ */
     const CONFIG = {
-        MESSAGE_INTERVAL_MS: 5000,       // 5s بين الرسائل
-        DUPLICATE_WINDOW_MS: 10000,      // 10s كشف التكرار
+        MESSAGE_INTERVAL_MS: 5000,
+        DUPLICATE_WINDOW_MS: 10000,
         MAX_MESSAGE_LENGTH: 2000,
         MESSAGES_LIMIT: 100,
-        TOUCH_INTERVAL_MS: 120000        // lastSeen كل دقيقتين
+        TOUCH_INTERVAL_MS: 120000
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* State                                           */
-    /* ══════════════════════════════════════════════ */
     const State = {
         currentRoom: null,
-        listener: null,          // { off }
-        messages: [],            // آخر N رسالة
+        listener: null,
+        messages: [],
         lastMessageTime: 0,
         lastMessageText: '',
         lastMessageAt: 0,
         lastTouchAt: 0,
         listeners: [],
         started: false,
-        userCodeIndex: {}        // { name: uid } — لتحويل mentions
+        userCodeIndex: {}
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* Events                                          */
-    /* ══════════════════════════════════════════════ */
     function onChatEvent(cb) {
         if (typeof cb !== 'function') return function () {};
         State.listeners.push(cb);
@@ -69,9 +65,14 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Helpers                                         */
-    /* ══════════════════════════════════════════════ */
+    // ⭐ v2.1: safe promise helper
+    function _safePromiseChain(p) {
+        if (p && typeof p.then === 'function' && typeof p.catch === 'function') {
+            return p;
+        }
+        return Promise.resolve(p);
+    }
+
     function _getCurrentUid() {
         if (window.QamarAuth && window.QamarAuth.getUid) return window.QamarAuth.getUid();
         return window.auth && window.auth.currentUser ? window.auth.currentUser.uid : null;
@@ -100,23 +101,13 @@
         return 0;
     }
 
-    function _canHide() {
-        return _myLevel() >= 65;
-    }
-
-    function _canDelete() {
-        // المُرسل نفسه أو 90+
-        return true; // التحقق في deleteMessage
-    }
+    function _canHide() { return _myLevel() >= 65; }
 
     function _sanitizeText(text) {
         if (!text) return '';
         return String(text).trim().substring(0, CONFIG.MAX_MESSAGE_LENGTH);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Build message payload                           */
-    /* ══════════════════════════════════════════════ */
     function _buildPayload(text, options) {
         options = options || {};
         const user = _getCurrentUser() || {};
@@ -146,31 +137,20 @@
             deleted: false
         };
 
-        if (options.attachment) {
-            payload.attachment = options.attachment;
-        }
-
+        if (options.attachment) payload.attachment = options.attachment;
         return payload;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Extract mentions — بدون @                       */
-    /* ══════════════════════════════════════════════ */
     function _extractMentions(text) {
-        // نستخدم extractMentions من utils إن وجد
         if (window.extractMentions) {
-            try {
-                return window.extractMentions(text) || [];
-            } catch (e) {}
+            try { return window.extractMentions(text) || []; } catch (e) {}
         }
-        // fallback — فقط أسماء بدون @ (كلمات تعرف من الـ index)
         if (!text) return [];
         const names = Object.keys(State.userCodeIndex);
         if (names.length === 0) return [];
         const out = [];
         names.forEach(function (name) {
             if (!name) return;
-            // نبحث عن الاسم ككلمة كاملة
             const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const regex = new RegExp('(?:^|\\s)' + escaped + '(?=\\s|$|[,،.!؟])', 'u');
             if (regex.test(text)) {
@@ -181,7 +161,6 @@
     }
 
     function _mentionsToUids(mentions) {
-        // يحوّل الأسماء إلى UIDs إن أمكن
         if (!mentions || mentions.length === 0) return [];
         return mentions.map(function (name) {
             return {
@@ -191,35 +170,38 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Index user names — تُحدَّث بشكل دوري             */
-    /* ══════════════════════════════════════════════ */
+    // ⭐ v2.1: محمي من undefined
     function _refreshUserIndex() {
-        if (!window.QamarFB) return;
-        window.QamarFB.get('user_names').then(function (data) {
-            if (data) {
-                State.userCodeIndex = data;
-                Logger.debug('User index updated:', Object.keys(data).length, 'names');
-            }
-        }).catch(function () {});
+        if (!window.QamarFB || typeof window.QamarFB.get !== 'function') return;
+        try {
+            const p = window.QamarFB.get('user_names');
+            _safePromiseChain(p).then(function (data) {
+                if (data) {
+                    State.userCodeIndex = data;
+                    Logger.debug('User index updated:', Object.keys(data).length, 'names');
+                }
+            }).catch(function () {});
+        } catch (e) {
+            Logger.warn('refreshUserIndex error:', e.message);
+        }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Mutes check                                     */
-    /* ══════════════════════════════════════════════ */
     function _isMuted(uid, roomId) {
         if (!uid) return Promise.resolve(false);
-        return window.QamarFB.get('users/' + uid + '/mutes').then(function (mutes) {
-            if (!mutes) return false;
-            if (mutes.global === true) return true;
-            if (roomId && mutes[roomId] === true) return true;
-            return false;
-        }).catch(function () { return false; });
+        if (!window.QamarFB || typeof window.QamarFB.get !== 'function') return Promise.resolve(false);
+        try {
+            const p = window.QamarFB.get('users/' + uid + '/mutes');
+            return _safePromiseChain(p).then(function (mutes) {
+                if (!mutes) return false;
+                if (mutes.global === true) return true;
+                if (roomId && mutes[roomId] === true) return true;
+                return false;
+            }).catch(function () { return false; });
+        } catch (e) {
+            return Promise.resolve(false);
+        }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Rate limit check                                */
-    /* ══════════════════════════════════════════════ */
     function _checkRate() {
         const now = Date.now();
         if (now - State.lastMessageTime < CONFIG.MESSAGE_INTERVAL_MS) {
@@ -229,9 +211,6 @@
         return { ok: true };
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Duplicate check                                 */
-    /* ══════════════════════════════════════════════ */
     function _isDuplicate(text) {
         const now = Date.now();
         if (text === State.lastMessageText && (now - State.lastMessageAt) < CONFIG.DUPLICATE_WINDOW_MS) {
@@ -240,50 +219,39 @@
         return false;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Guest room check                                */
-    /* ══════════════════════════════════════════════ */
     function _isPublicRoom(roomId) {
         const room = window.QAMAR && window.QAMAR.ROOMS ? window.QAMAR.ROOMS[roomId] : null;
         if (!room) return false;
         return room.visibleTo === 'all';
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Send message                                    */
-    /* ══════════════════════════════════════════════ */
     function send(text, options) {
         options = options || {};
         const roomId = options.roomId || State.currentRoom;
 
         return Promise.resolve().then(function () {
-            if (!roomId) throw new Error('لا توجد غرفة محددة');
+            if (!roomId || typeof roomId !== 'string') throw new Error('لا توجد غرفة محددة');
             if (!_getCurrentUid()) throw new Error('غير مسجل');
 
             const clean = _sanitizeText(text);
             if (!clean && !options.attachment) throw new Error('الرسالة فارغة');
 
-            // فحص الروم للزوار
             if (_isGuest() && !_isPublicRoom(roomId)) {
                 throw new Error('الزوار لا يمكنهم الكتابة في هذه الغرفة');
             }
 
-            // Rate limit
             const rate = _checkRate();
             if (!rate.ok) {
                 throw new Error('انتظر ' + rate.remaining + ' ثانية قبل الإرسال');
             }
 
-            // Duplicate
             if (_isDuplicate(clean)) {
                 throw new Error('لا تكرر نفس الرسالة');
             }
 
-            // Mentions
             const mentions = _extractMentions(clean);
             const mentionsData = _mentionsToUids(mentions);
 
-            // Reply
             let replyTo = null;
             if (options.replyTo) {
                 replyTo = {
@@ -294,28 +262,23 @@
                 };
             }
 
-            // Build payload
             const payload = _buildPayload(clean, {
                 mentions: mentionsData,
                 replyTo: replyTo,
                 attachment: options.attachment || null
             });
 
-            // Check mute first
             return _isMuted(_getCurrentUid(), roomId).then(function (muted) {
                 if (muted) throw new Error('أنت مكتوم في هذه الغرفة');
-
                 return window.QamarFB.push('room_messages/' + roomId, payload);
             }).then(function (msgId) {
                 State.lastMessageTime = Date.now();
                 State.lastMessageText = clean;
                 State.lastMessageAt = Date.now();
 
-                // Touch lastSeen (debounced)
                 _touchLastSeen();
 
-                // Cache message locally
-                if (window.QamarOpt) {
+                if (window.QamarOpt && typeof window.QamarOpt.cacheMessage === 'function') {
                     try { window.QamarOpt.cacheMessage(roomId, msgId, payload); } catch (e) {}
                 }
 
@@ -326,18 +289,12 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Send with attachment                            */
-    /* ══════════════════════════════════════════════ */
     function sendWithAttachment(text, attachment, options) {
         options = options || {};
         options.attachment = attachment;
         return send(text, options);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Send reply                                      */
-    /* ══════════════════════════════════════════════ */
     function sendReply(text, originalMessage, options) {
         options = options || {};
         options.replyTo = {
@@ -349,9 +306,6 @@
         return send(text, options);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Delete message (soft)                           */
-    /* ══════════════════════════════════════════════ */
     function deleteMessage(msgId, roomId) {
         roomId = roomId || State.currentRoom;
         return Promise.resolve().then(function () {
@@ -374,7 +328,6 @@
                 updates[basePath + '/deleted'] = true;
                 updates[basePath + '/deletedAt'] = window.QamarFB.serverTime();
                 updates[basePath + '/deletedBy'] = uid;
-                // احفظ النص الأصلي
                 updates[basePath + '/originalText'] = msg.text || '';
                 if (msg.attachment) updates[basePath + '/originalAttachment'] = msg.attachment;
                 updates[basePath + '/text'] = '';
@@ -391,16 +344,12 @@
                         });
                     }
                     _emit('chat:messageDeleted', { msgId: msgId, roomId: roomId });
-                    Logger.debug('🗑️ Deleted message:', msgId);
                     return { ok: true, msgId: msgId };
                 });
             });
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Hide message (65+)                              */
-    /* ══════════════════════════════════════════════ */
     function hideMessage(msgId, reason, roomId) {
         roomId = roomId || State.currentRoom;
         return Promise.resolve().then(function () {
@@ -416,11 +365,7 @@
 
             return window.QamarFB.multiUpdate(updates).then(function () {
                 if (window.QamarAudit) {
-                    window.QamarAudit.log('hideMsg', {
-                        roomId: roomId,
-                        msgId: msgId,
-                        reason: reason || '—'
-                    });
+                    window.QamarAudit.log('hideMsg', { roomId: roomId, msgId: msgId, reason: reason || '—' });
                 }
                 _emit('chat:messageHidden', { msgId: msgId, roomId: roomId });
                 return { ok: true, msgId: msgId };
@@ -428,9 +373,6 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Edit message (King only)                        */
-    /* ══════════════════════════════════════════════ */
     function editMessage(msgId, newText, roomId) {
         roomId = roomId || State.currentRoom;
         return Promise.resolve().then(function () {
@@ -446,10 +388,7 @@
 
             return window.QamarFB.multiUpdate(updates).then(function () {
                 if (window.QamarAudit) {
-                    window.QamarAudit.log('editMsg', {
-                        roomId: roomId,
-                        msgId: msgId
-                    });
+                    window.QamarAudit.log('editMsg', { roomId: roomId, msgId: msgId });
                 }
                 _emit('chat:messageEdited', { msgId: msgId, roomId: roomId });
                 return { ok: true, msgId: msgId };
@@ -457,9 +396,6 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Touch lastSeen (debounced)                      */
-    /* ══════════════════════════════════════════════ */
     function _touchLastSeen() {
         const now = Date.now();
         if (now - State.lastTouchAt < CONFIG.TOUCH_INTERVAL_MS) return;
@@ -471,15 +407,30 @@
         if (State.currentRoom) {
             updates['users/' + uid + '/currentRoom'] = State.currentRoom;
         }
-        window.QamarFB.multiUpdate(updates).catch(function () {});
+        try {
+            const p = window.QamarFB.multiUpdate(updates);
+            _safePromiseChain(p).catch(function () {});
+        } catch (e) {}
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Start listening to room                         */
-    /* ══════════════════════════════════════════════ */
+    // ⭐ v2.1: بديل آمن لاسترجاع الرسائل من الكاش
+    function _loadCachedMessages(roomId) {
+        if (!window.QamarOpt || typeof window.QamarOpt.getCachedMessages !== 'function') return;
+        try {
+            const p = window.QamarOpt.getCachedMessages(roomId, CONFIG.MESSAGES_LIMIT);
+            _safePromiseChain(p).then(function (cached) {
+                if (cached && cached.length > 0) {
+                    _emit('chat:cachedMessages', { roomId: roomId, messages: cached });
+                }
+            }).catch(function () {});
+        } catch (e) {
+            Logger.warn('loadCachedMessages error:', e.message);
+        }
+    }
+
     function start(roomId) {
-        if (!roomId) {
-            Logger.warn('start: roomId مطلوب');
+        if (!roomId || typeof roomId !== 'string') {
+            Logger.warn('start: roomId must be a string, got:', typeof roomId);
             return;
         }
         if (State.currentRoom === roomId && State.listener) {
@@ -494,44 +445,36 @@
 
         Logger.info('▶️ Listening to room:', roomId);
 
-        // تحديث المؤشر
         _refreshUserIndex();
+        _loadCachedMessages(roomId);
 
-        // استرجع الرسائل من الـ IDB فوراً (للعرض السريع)
-        if (window.QamarOpt) {
-            window.QamarOpt.getCachedMessages(roomId, CONFIG.MESSAGES_LIMIT).then(function (cached) {
-                if (cached && cached.length > 0) {
-                    _emit('chat:cachedMessages', { roomId: roomId, messages: cached });
-                }
-            }).catch(function () {});
-        }
-
-        // listener على Firebase
         const path = 'room_messages/' + roomId;
-        State.listener = window.QamarFB.onLatest(path, CONFIG.MESSAGES_LIMIT, function (messages) {
-            const list = messages.map(function (m) {
-                return Object.assign({ _id: m.id }, m.data);
+
+        try {
+            State.listener = window.QamarFB.onLatest(path, CONFIG.MESSAGES_LIMIT, function (messages) {
+                const list = messages.map(function (m) {
+                    return Object.assign({ _id: m.id }, m.data);
+                });
+
+                if (window.QamarOpt && typeof window.QamarOpt.cacheMessages === 'function') {
+                    try { window.QamarOpt.cacheMessages(roomId, messages); } catch (e) {}
+                }
+
+                State.messages = list;
+                _emit('chat:messages', { roomId: roomId, messages: list });
+            }, function (err) {
+                Logger.error('listener error:', err);
+                _emit('chat:error', { roomId: roomId, error: err });
             });
-
-            // احفظ في الكاش
-            if (window.QamarOpt) {
-                try { window.QamarOpt.cacheMessages(roomId, messages); } catch (e) {}
-            }
-
-            State.messages = list;
-            _emit('chat:messages', { roomId: roomId, messages: list });
-        }, function (err) {
-            Logger.error('listener error:', err);
-            _emit('chat:error', { roomId: roomId, error: err });
-        });
+        } catch (e) {
+            Logger.error('onLatest threw:', e.message);
+            State.listener = null;
+        }
 
         State.started = true;
         _emit('chat:started', { roomId: roomId });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Stop                                            */
-    /* ══════════════════════════════════════════════ */
     function stop() {
         if (State.listener && State.listener.off) {
             try { State.listener.off(); } catch (e) {}
@@ -541,9 +484,6 @@
         _emit('chat:stopped', { roomId: State.currentRoom });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Get messages                                    */
-    /* ══════════════════════════════════════════════ */
     function getRecent(limit) {
         limit = limit || CONFIG.MESSAGES_LIMIT;
         return State.messages.slice(-limit);
@@ -559,24 +499,19 @@
             .catch(function () { return null; });
     }
 
-    function getRoom() {
-        return State.currentRoom;
-    }
+    function getRoom() { return State.currentRoom; }
 
-    /* ══════════════════════════════════════════════ */
-    /* Clear room cache                                */
-    /* ══════════════════════════════════════════════ */
     function clearRoomCache(roomId) {
         roomId = roomId || State.currentRoom;
-        if (window.QamarOpt && roomId) {
-            return window.QamarOpt.clearCachedMessages(roomId);
+        if (window.QamarOpt && typeof window.QamarOpt.clearCachedMessages === 'function' && roomId) {
+            try {
+                const p = window.QamarOpt.clearCachedMessages(roomId);
+                return _safePromiseChain(p).catch(function () { return 0; });
+            } catch (e) {}
         }
         return Promise.resolve(0);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Status / Debug                                  */
-    /* ══════════════════════════════════════════════ */
     function getStatus() {
         return {
             started: State.started,
@@ -591,32 +526,16 @@
         };
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Init                                            */
-    /* ══════════════════════════════════════════════ */
+    // ⭐ v2.1: _init — لا نستمع لـ room:changed (rooms.js يستدعي start مباشرة)
     function _init() {
-        // عند boot → ابدأ بالروم الافتراضي إن وُجد
-        if (window.EventBus) {
-            window.EventBus.on('room:changed', function (roomId) {
-                if (roomId) start(roomId);
-            });
-        }
-
-        // راقب تغيير الجلسة
+        // راقب تغيير الجلسة فقط
         if (window.QamarAuth && window.QamarAuth.onAuthChange) {
             window.QamarAuth.onAuthChange(function (p) {
-                if (!p.isLoggedIn) {
-                    stop();
-                }
+                if (!p.isLoggedIn) stop();
             });
         }
 
-        // راقب تغيير الرتب (تحديث payload)
-        if (window.QamarRanks && window.QamarRanks.onRankChange) {
-            // لا شيء — payload يُبنى عند كل إرسال
-        }
-
-        Logger.info('📦 [chat.js] initialized');
+        Logger.info('📦 [chat.js v2.1] initialized');
     }
 
     if (window.EventBus) {
@@ -627,44 +546,26 @@
         setTimeout(_init, 5000);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Exports                                         */
-    /* ══════════════════════════════════════════════ */
     const QamarChat = {
-        // Config
         CONFIG: CONFIG,
-
-        // Lifecycle
         start: start,
         stop: stop,
         getRoom: getRoom,
-
-        // Send
         send: send,
         sendWithAttachment: sendWithAttachment,
         sendReply: sendReply,
-
-        // Moderation
         deleteMessage: deleteMessage,
         hideMessage: hideMessage,
         editMessage: editMessage,
-
-        // Read
         getRecent: getRecent,
         getMessage: getMessage,
-
-        // Utils
         clearRoomCache: clearRoomCache,
         refreshUserIndex: _refreshUserIndex,
-
-        // Events
         onChatEvent: onChatEvent,
-
-        // Debug
         getStatus: getStatus
     };
 
     window.QamarChat = QamarChat;
 
-    Logger.info('📦 [chat.js] loaded');
+    Logger.info('📦 [chat.js v2.1] loaded — room:changed fix');
 })();
