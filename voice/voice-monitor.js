@@ -1,9 +1,18 @@
 // ==============================================
-// voice/voice-monitor.js
-// Auto-record suspects + upload to Telegram
+// voice/voice-monitor.js v2 — إصلاح mediaElementSource
 // ==============================================
-// يعتمد على: firebase.js + suspects.js + room-voice.js + voice-system.js + audit.js
+// يعتمد على: firebase.js + suspects.js + room-voice.js + voice-system.js + adaptive.js
 // يعطي: window.QamarVoiceMonitor
+// ==============================================
+// ⭐ v2 (فوق v1):
+//   1. إصلاح BUG: createMediaElementSource مرة واحدة
+//   2. Source Cache — إعادة استخدام AudioNode
+//   3. لا نُغلق audioContext بعد الإنشاء
+//   4. isSuspectSync (بدل isSuspect)
+//   5. QamarAdaptive: heartbeat + enabled
+//   6. تسجيل أخطاء createMediaElementSource في king_alerts
+//   7. QamarBoot.whenReady بدل EventBus.once
+//   8. كل الباقي كما v1 (segments 5min + Telegram upload + lock)
 // ==============================================
 
 (function () {
@@ -13,6 +22,8 @@
         console.error('❌ [voice-monitor] firebase.js not loaded!');
         return;
     }
+
+    if (window.QamarVoiceMonitor && window.QamarVoiceMonitor.__v2) return;
 
     const LOG_TAG = '[VM]';
     const Logger = {
@@ -29,8 +40,9 @@
         LOCK_PATH: 'voice_monitor_lock',
         ALERTS_PATH: 'king_alerts',
         TELEGRAM_CONFIG_PATH: 'config/telegram',
-        SEGMENT_MS: 5 * 60 * 1000,       // 5 دقائق لكل جزء
-        LOCK_TTL_MS: 10 * 60 * 1000,     // 10 دقائق
+        SEGMENT_MS: 5 * 60 * 1000,
+        LOCK_TTL_MS: 10 * 60 * 1000,
+        LOCK_HEARTBEAT_MS_DEFAULT: 2 * 60 * 1000,   // سيُستبدل بـ Adaptive
         MAX_RETRY_UPLOAD: 3,
         RETRY_DELAY_MS: 2000,
         UPLOAD_TIMEOUT_MS: 60000
@@ -40,36 +52,36 @@
     /* State                                           */
     /* ══════════════════════════════════════════════ */
     const State = {
-        // بيانات Telegram (من Firebase)
-        telegram: null,                  // { botToken, chatId, enabled }
+        telegram: null,
 
-        // المراقبة الحالية
         monitoring: false,
         currentRoom: null,
         currentTargetUid: null,
         currentTargetName: null,
         lockAcquiredAt: 0,
 
-        // التسجيل
+        // ⭐ v2: cache دائم للـ source nodes
+        sourceCache: new Map(),     // audioEl → { source, dest, ownerUid, at }
+
+        // audioContext — دائم، لا نُغلقه
         audioContext: null,
-        sourceNode: null,
-        destNode: null,
+
         mediaRecorder: null,
         chunks: [],
         segmentStartAt: 0,
         segmentTimer: null,
         segmentIndex: 0,
         totalSegments: 0,
+        lockHeartbeat: null,
 
-        // listeners
         listeners: [],
         unsubs: [],
 
-        // instance ID للقفل
         instanceId: 'vm_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8),
 
         _initialized: false,
-        _lastTargetUid: null
+        _lastTargetUid: null,
+        _adaptiveBound: false
     };
 
     /* ══════════════════════════════════════════════ */
@@ -119,8 +131,24 @@
     }
 
     function _canMonitor() {
-        // الملك فقط (رتبة 100)
         return _isKing();
+    }
+
+    function _isVoiceMonitorEnabled() {
+        if (window.QamarAdaptive && typeof window.QamarAdaptive.isEnabled === 'function') {
+            return window.QamarAdaptive.isEnabled('voiceMonitorEnabled');
+        }
+        return true;
+    }
+
+    function _getLockHeartbeatMs() {
+        if (window.QamarAdaptive && typeof window.QamarAdaptive.get === 'function') {
+            // heartbeatMs من Adaptive (20/30/60/90s)
+            // نستخدمها × 2 لقفل المراقبة
+            const base = window.QamarAdaptive.get('heartbeatMs') || 30000;
+            return Math.max(base, 60000);
+        }
+        return CONFIG.LOCK_HEARTBEAT_MS_DEFAULT;
     }
 
     function _toast(msg) {
@@ -151,7 +179,7 @@
                     Logger.info('✅ Telegram config loaded');
                     return State.telegram;
                 }
-                Logger.warn('Telegram config missing — please set config/telegram');
+                Logger.warn('Telegram config missing — set config/telegram');
                 State.telegram = null;
                 return null;
             })
@@ -174,7 +202,7 @@
                 return { instanceId: State.instanceId, at: Date.now(), byUid: _getCurrentUid(), byName: _getCurrentName() };
             }
             if (cur && cur.at && (Date.now() - cur.at) < CONFIG.LOCK_TTL_MS) {
-                return undefined; // abort — قفل نشط
+                return undefined;
             }
             return {
                 instanceId: State.instanceId,
@@ -217,6 +245,94 @@
     }
 
     /* ══════════════════════════════════════════════ */
+    /* ⭐ v2: Get or create audio source               */
+    /* ══════════════════════════════════════════════ */
+    /**
+     * يُرجع { source, dest } جاهزَين للاستخدام.
+     * - إذا <audio> في الكاش → أعِد استخدام
+     * - وإلا أنشئ مرة واحدة فقط
+     */
+    function _getOrCreateSource(audioEl, ownerUid) {
+        if (!audioEl) return null;
+
+        // هل موجود في الكاش؟
+        if (State.sourceCache.has(audioEl)) {
+            const cached = State.sourceCache.get(audioEl);
+            Logger.debug('♻️ Reusing cached source for', ownerUid ? ownerUid.substring(0, 8) : 'audio');
+            return cached;
+        }
+
+        // أنشئ audioContext إذا لزم
+        if (!State.audioContext) {
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) {
+                    Logger.warn('AudioContext not supported');
+                    return null;
+                }
+                State.audioContext = new AC();
+                Logger.info('🎛️ AudioContext created (persistent)');
+            } catch (e) {
+                Logger.error('Failed to create AudioContext:', e.message);
+                return null;
+            }
+        }
+
+        const ctx = State.audioContext;
+
+        // حاول إنشاء source
+        try {
+            const source = ctx.createMediaElementSource(audioEl);
+            const dest = ctx.createMediaStreamDestination();
+
+            // وصّل source → destination الأصلي (المستخدم يسمع)
+            source.connect(ctx.destination);
+            // وصّل source → destination للتسجيل
+            source.connect(dest);
+
+            const entry = {
+                source: source,
+                dest: dest,
+                ownerUid: ownerUid,
+                at: Date.now()
+            };
+            State.sourceCache.set(audioEl, entry);
+            Logger.info('✨ Created new source for', ownerUid ? ownerUid.substring(0, 8) : 'audio');
+            return entry;
+        } catch (e) {
+            // 💥 غالباً InvalidStateError — العنصر تم ربطه سابقاً
+            Logger.error('createMediaElementSource failed:', e.message);
+
+            // سجّل في king_alerts
+            _logAlert({
+                type: 'monitor_error',
+                error: e.message,
+                errorName: e.name,
+                targetUid: ownerUid,
+                targetName: State.currentTargetName,
+                room: State.currentRoom,
+                createdAt: window.QamarFB.serverTime()
+            });
+
+            return null;
+        }
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Remove from cache (عند خروج المشتبه)            */
+    /* ══════════════════════════════════════════════ */
+    function _removeFromSourceCache(audioEl) {
+        if (!audioEl) return;
+        if (State.sourceCache.has(audioEl)) {
+            const entry = State.sourceCache.get(audioEl);
+            try { entry.source.disconnect(); } catch (e) {}
+            try { entry.dest.disconnect(); } catch (e) {}
+            State.sourceCache.delete(audioEl);
+            Logger.debug('🗑️ Source removed from cache');
+        }
+    }
+
+    /* ══════════════════════════════════════════════ */
     /* Start monitoring a suspect                      */
     /* ══════════════════════════════════════════════ */
     function _startMonitoring(roomId, targetUid, targetName) {
@@ -225,19 +341,22 @@
             return Promise.resolve({ skipped: true });
         }
         if (!_canMonitor()) return Promise.resolve({ skipped: 'not-king' });
+        if (!_isVoiceMonitorEnabled()) {
+            Logger.debug('Voice monitor disabled (very-slow net)');
+            return Promise.resolve({ skipped: 'disabled' });
+        }
 
         return _loadTelegramConfig().then(function () {
             return _acquireLock(roomId);
         }).then(function (acquired) {
             if (!acquired) {
-                Logger.debug('Lock not acquired for room', roomId, '— skipping');
+                Logger.debug('Lock not acquired for room', roomId);
                 return { skipped: 'locked' };
             }
 
-            // ابحث عن عنصر الصوت
             const audioEl = _findAudioElement(targetUid);
             if (!audioEl) {
-                Logger.warn('Audio element for target not found:', targetUid.substring(0, 8));
+                Logger.warn('Audio element not found:', targetUid.substring(0, 8));
                 _releaseLock(roomId);
                 return { skipped: 'no-audio-el' };
             }
@@ -252,35 +371,32 @@
         });
     }
 
+    /* ══════════════════════════════════════════════ */
+    /* Begin recording                                 */
+    /* ══════════════════════════════════════════════ */
     function _beginRecording(roomId, targetUid, targetName, audioEl) {
         return new Promise(function (resolve, reject) {
             try {
-                const AC = window.AudioContext || window.webkitAudioContext;
-                if (!AC) return reject(new Error('AudioContext غير متاح'));
+                // ⭐ v2: استخدم _getOrCreateSource
+                const entry = _getOrCreateSource(audioEl, targetUid);
+                if (!entry) {
+                    return reject(new Error('فشل الوصول لعنصر الصوت'));
+                }
 
-                State.audioContext = new AC();
-                const ctx = State.audioContext;
+                const { dest } = entry;
 
-                // أنشئ source من <audio>
-                State.sourceNode = ctx.createMediaElementSource(audioEl);
-                // صِل للـ destination الأصلي (المستخدم لازم يسمع)
-                State.sourceNode.connect(ctx.destination);
-                // صِل لـ MediaStreamDestination للتسجيل
-                State.destNode = ctx.createMediaStreamDestination();
-                State.sourceNode.connect(State.destNode);
-
-                // ابدأ MediaRecorder
+                // اختر mime
                 const mime = (window.MediaRecorder && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))
                     ? 'audio/webm;codecs=opus'
                     : 'audio/webm';
 
                 State.chunks = [];
-                State.mediaRecorder = new MediaRecorder(State.destNode.stream, { mimeType: mime });
+                State.mediaRecorder = new MediaRecorder(dest.stream, { mimeType: mime });
                 State.mediaRecorder.ondataavailable = function (ev) {
                     if (ev.data && ev.data.size > 0) State.chunks.push(ev.data);
                 };
                 State.mediaRecorder.onstop = _onSegmentStop;
-                State.mediaRecorder.start(1000); // chunk كل ثانية
+                State.mediaRecorder.start(1000);
 
                 State.monitoring = true;
                 State.currentRoom = roomId;
@@ -290,33 +406,35 @@
                 State.segmentIndex = 0;
                 State.totalSegments = 0;
 
-                // timer لقطع الأجزاء كل 5 دقائق
+                // timer للأجزاء
                 if (State.segmentTimer) clearInterval(State.segmentTimer);
                 State.segmentTimer = setInterval(_rotateSegment, CONFIG.SEGMENT_MS);
 
-                // heartbeat للقفل كل دقيقتين
+                // heartbeat للقفل — من Adaptive
                 if (State.lockHeartbeat) clearInterval(State.lockHeartbeat);
+                const hbMs = _getLockHeartbeatMs();
                 State.lockHeartbeat = setInterval(function () {
                     if (State.monitoring && State.currentRoom) {
                         _refreshLock(State.currentRoom);
                     }
-                }, 2 * 60 * 1000);
+                }, hbMs);
 
-                Logger.info('🎙️ Monitoring started:', targetName, 'in', roomId);
+                Logger.info('🎙️ Monitoring started:', targetName, 'in', roomId,
+                    '| lock heartbeat:', hbMs + 'ms');
                 _emit('voice-monitor:started', {
                     roomId: roomId, uid: targetUid, name: targetName
                 });
                 resolve(true);
             } catch (e) {
                 Logger.error('beginRecording failed:', e.message);
-                _cleanup();
+                _cleanupRecording(false);  // لا نحذف من الـ cache
                 reject(e);
             }
         });
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Segment rotation (كل 5 دقائق)                   */
+    /* Segment rotation                                */
     /* ══════════════════════════════════════════════ */
     function _rotateSegment() {
         if (!State.monitoring) return;
@@ -326,29 +444,27 @@
     }
 
     function _onSegmentStop() {
-        // اجمع الـ blob
         const chunks = State.chunks.slice();
         State.chunks = [];
         State.segmentIndex++;
 
-        if (chunks.length === 0) {
-            // لا شيء — ربما قطعة فارغة
-            return;
-        }
+        if (chunks.length === 0) return;
 
         const blob = new Blob(chunks, { type: 'audio/webm' });
         const duration = Date.now() - State.segmentStartAt;
         State.segmentStartAt = Date.now();
 
-        // ارفع في الخلفية
         _uploadToTelegram(blob, duration, State.segmentIndex).catch(function (e) {
             Logger.warn('upload failed:', e.message);
         });
 
-        // استمر بالجزء التالي إذا ما زلنا نراقب
-        if (State.monitoring && State.currentRoom) {
+        // استمر بالجزء التالي
+        if (State.monitoring && State.currentRoom && State.mediaRecorder) {
             try {
-                State.mediaRecorder = new MediaRecorder(State.destNode.stream, { mimeType: 'audio/webm' });
+                const entry = State.sourceCache.get(_findAudioElement(State.currentTargetUid));
+                if (!entry) return;
+                const mime = State.mediaRecorder.mimeType || 'audio/webm';
+                State.mediaRecorder = new MediaRecorder(entry.dest.stream, { mimeType: mime });
                 State.mediaRecorder.ondataavailable = function (ev) {
                     if (ev.data && ev.data.size > 0) State.chunks.push(ev.data);
                 };
@@ -363,12 +479,12 @@
     /* ══════════════════════════════════════════════ */
     /* Stop monitoring                                 */
     /* ══════════════════════════════════════════════ */
-    function _stopMonitoring(reason) {
+    function _stopMonitoring(reason, cleanupCache) {
         if (!State.monitoring) return Promise.resolve({ ok: true, skipped: true });
 
-        Logger.info('⏹️ Stopping monitoring. Reason:', reason || 'unknown');
+        Logger.info('⏹️ Stopping monitoring. Reason:', reason || 'unknown',
+            '| cleanupCache:', !!cleanupCache);
 
-        // أوقف الـ timer
         if (State.segmentTimer) {
             clearInterval(State.segmentTimer);
             State.segmentTimer = null;
@@ -378,7 +494,6 @@
             State.lockHeartbeat = null;
         }
 
-        // أوقف MediaRecorder (يُطلق onstop → يرفع الجزء الأخير)
         return new Promise(function (resolve) {
             try {
                 if (State.mediaRecorder && State.mediaRecorder.state !== 'inactive') {
@@ -395,31 +510,23 @@
                 resolve(false);
             }
         }).then(function () {
-            // احذف القفل
             return _releaseLock(State.currentRoom);
         }).then(function () {
-            _cleanup();
+            // ⭐ v2: احذف من الكاش فقط إذا طُلب (خروج المشتبه)
+            if (cleanupCache && State.currentTargetUid) {
+                const audioEl = _findAudioElement(State.currentTargetUid);
+                if (audioEl) _removeFromSourceCache(audioEl);
+            }
+
+            _cleanupRecording(cleanupCache);
             _emit('voice-monitor:stopped', { reason: reason || 'unknown' });
             return { ok: true };
         });
     }
 
-    function _cleanup() {
-        try {
-            if (State.sourceNode) {
-                try { State.sourceNode.disconnect(); } catch (e) {}
-            }
-            if (State.destNode) {
-                try { State.destNode.disconnect(); } catch (e) {}
-            }
-            if (State.audioContext) {
-                try { State.audioContext.close(); } catch (e) {}
-            }
-        } catch (e) {}
+    /* ⭐ v2: تنظيف بدون إغلاق audioContext            */
+    function _cleanupRecording(cleanupCache) {
         State.monitoring = false;
-        State.audioContext = null;
-        State.sourceNode = null;
-        State.destNode = null;
         State.mediaRecorder = null;
         State.chunks = [];
         State.currentRoom = null;
@@ -427,6 +534,14 @@
         State.currentTargetName = null;
         State.segmentStartAt = 0;
         State.segmentIndex = 0;
+
+        // ⚠️ لا نُغلق audioContext
+        // ⚠️ لا نحذف من sourceCache — إلا إذا طُلب
+        if (cleanupCache) {
+            State.sourceCache.forEach(function (entry, audioEl) {
+                _removeFromSourceCache(audioEl);
+            });
+        }
     }
 
     /* ══════════════════════════════════════════════ */
@@ -453,7 +568,6 @@
 
         const url = 'https://api.telegram.org/bot' + State.telegram.botToken + '/sendAudio';
 
-        // FormData
         const fd = new FormData();
         fd.append('chat_id', State.telegram.chatId);
         fd.append('audio', blob, 'qamar-monitor-' + Date.now() + '.webm');
@@ -468,7 +582,6 @@
             if (result && result.ok) {
                 const msgId = result.result && result.result.message_id;
                 Logger.info('✅ Uploaded to Telegram (msgId=' + msgId + ')');
-                // سجّل في Firebase
                 _logAlert({
                     type: 'voice_record',
                     suspects: [State.currentTargetUid],
@@ -543,25 +656,31 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* External hooks — من room-voice و suspects       */
+    /* External hooks                                  */
     /* ══════════════════════════════════════════════ */
     function onVoiceJoin(uid, context) {
         if (!uid) return;
         if (!_canMonitor()) return;
-        // فحص إذا كان مشبوهاً
+        if (!_isVoiceMonitorEnabled()) return;
+
         if (!window.QamarSuspects) return;
-        const isSuspect = window.QamarSuspects.isSuspectSync
+
+        // ⭐ v2: نستخدم isSuspectSync (boolean فوري)
+        const isSuspect = (typeof window.QamarSuspects.isSuspectSync === 'function')
             ? window.QamarSuspects.isSuspectSync(uid)
             : false;
+
         if (!isSuspect) return;
-        // احصل على اسم المشبوه
-        const roomId = (context && context.roomId) || (window.QamarRoomVoice && window.QamarRoomVoice.getStatus
-            ? window.QamarRoomVoice.getStatus().currentRoom
-            : null);
+
+        const roomId = (context && context.roomId) ||
+            (window.QamarRoomVoice && window.QamarRoomVoice.getStatus
+                ? window.QamarRoomVoice.getStatus().currentRoom
+                : null);
         if (!roomId) return;
 
         const name = (context && context.name) || '—';
-        // انتظر قليلاً حتى ينشأ <audio>
+
+        // انتظر حتى ينشأ <audio>
         setTimeout(function () {
             _startMonitoring(roomId, uid, name);
         }, 1500);
@@ -570,9 +689,11 @@
     function onVoiceLeft(uid) {
         if (!uid) return;
         if (!State.monitoring) return;
+
         if (uid === State.currentTargetUid) {
-            Logger.info('👋 Target left — stopping monitor');
-            _stopMonitoring('target-left');
+            Logger.info('👋 Target left — stopping monitor + cleanup cache');
+            // ⭐ v2: cleanupCache = true (خروج نهائي)
+            _stopMonitoring('target-left', true);
         }
     }
 
@@ -583,10 +704,8 @@
         if (State._initialized) return;
         State._initialized = true;
 
-        // حمّل بيانات Telegram
         _loadTelegramConfig(true);
 
-        // سجّل المستمعين
         if (window.EventBus) {
             const off1 = window.EventBus.on('voice:joined', function (p) {
                 if (p && p.uid) onVoiceJoin(p.uid, p);
@@ -597,19 +716,36 @@
             const off3 = window.EventBus.on('suspect:voiceJoined', function (p) {
                 if (p && p.uid) onVoiceJoin(p.uid, p.context || {});
             });
-            // عند تغيير الغرفة → أوقف
             const off4 = window.EventBus.on('room:changed', function () {
-                if (State.monitoring) _stopMonitoring('room-changed');
+                if (State.monitoring) _stopMonitoring('room-changed', true);
             });
-            // عند الخروج → أوقف
             const off5 = window.EventBus.on('auth:signout', function () {
-                if (State.monitoring) _stopMonitoring('signout');
+                if (State.monitoring) _stopMonitoring('signout', true);
             });
 
             State.unsubs = [off1, off2, off3, off4, off5];
         }
 
-        Logger.info('📦 [voice-monitor.js] started');
+        // استمع لـ adaptive
+        _bindAdaptive();
+
+        Logger.info('📦 [voice-monitor.js v2] started');
+    }
+
+    function _bindAdaptive() {
+        if (State._adaptiveBound) return;
+        if (!window.QamarAdaptive || typeof window.QamarAdaptive.onFeatureChange !== 'function') {
+            setTimeout(_bindAdaptive, 1000);
+            return;
+        }
+        State._adaptiveBound = true;
+
+        window.QamarAdaptive.onFeatureChange('voiceMonitorEnabled', function (payload) {
+            if (payload.value === false && State.monitoring) {
+                Logger.info('⏸️ Net slowed — stopping monitor');
+                _stopMonitoring('net-slow', true);
+            }
+        });
     }
 
     function stop() {
@@ -617,12 +753,13 @@
             try { if (off) off(); } catch (e) {}
         });
         State.unsubs = [];
-        if (State.monitoring) _stopMonitoring('manual');
+        if (State.monitoring) _stopMonitoring('manual', true);
         State._initialized = false;
-        Logger.info('📦 [voice-monitor.js] stopped');
+        Logger.info('📦 [voice-monitor.js v2] stopped');
     }
 
     function isMonitoring() { return State.monitoring; }
+
     function getCurrentTarget() {
         return State.monitoring ? {
             uid: State.currentTargetUid,
@@ -633,12 +770,16 @@
         } : null;
     }
 
-    function forceStop() { return _stopMonitoring('forced'); }
+    function forceStop() { return _stopMonitoring('forced', true); }
 
     /* ══════════════════════════════════════════════ */
     /* Init                                            */
     /* ══════════════════════════════════════════════ */
-    if (window.EventBus) {
+    if (window.QamarBoot && typeof window.QamarBoot.whenReady === 'function') {
+        window.QamarBoot.whenReady('background', function () {
+            setTimeout(start, 1500);
+        });
+    } else if (window.EventBus) {
         window.EventBus.once('boot:ready', function () {
             setTimeout(start, 3000);
         });
@@ -659,7 +800,11 @@
             segmentIndex: State.segmentIndex,
             hasTelegramConfig: !!(State.telegram && State.telegram.botToken),
             instanceId: State.instanceId,
-            canMonitor: _canMonitor()
+            canMonitor: _canMonitor(),
+            voiceEnabled: _isVoiceMonitorEnabled(),
+            sourceCacheSize: State.sourceCache.size,
+            hasAudioContext: !!State.audioContext,
+            audioContextState: State.audioContext ? State.audioContext.state : null
         };
     }
 
@@ -667,29 +812,32 @@
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarVoiceMonitor = {
+        __v2: true,
         CONFIG: CONFIG,
 
-        // Lifecycle
         start: start,
         stop: stop,
         isMonitoring: isMonitoring,
         getCurrentTarget: getCurrentTarget,
         forceStop: forceStop,
 
-        // Config
         reloadTelegramConfig: function () { return _loadTelegramConfig(true); },
 
-        // Test (للاستخدام اليدوي)
+        // اختبار يدوي
         testUpload: function (blob) {
             return _uploadToTelegram(blob, 0, 0);
         },
 
-        // Events
-        onMonitorEvent: onMonitorEvent,
+        // ⭐ v2: للـ debugging
+        clearSourceCache: function () {
+            State.sourceCache.forEach(function (entry, audioEl) {
+                _removeFromSourceCache(audioEl);
+            });
+        },
 
-        // Debug
+        onMonitorEvent: onMonitorEvent,
         getStatus: getStatus
     };
 
-    Logger.info('📦 [voice-monitor.js] loaded');
+    Logger.info('📦 [voice-monitor.js v2] loaded — BUG-2 fixed + Android-friendly');
 })();
