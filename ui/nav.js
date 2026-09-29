@@ -1,16 +1,11 @@
 // ==============================================
-// ui/nav.js
+// ui/nav.js v2.1 — profile modal support
 // Bottom Nav + Sidebars + Header buttons
 // ==============================================
-// يعتمد على: rooms.js + pm.js + auth.js + session.js + EventBus
+// يعتمد على: rooms.js + pm.js + auth.js + session.js + EventBus + profile.js
 // يعطي: window.QamarNav
 // ==============================================
-// ⭐ يغطي:
-//   1. Bottom nav (5 أزرار) → يفتح sidebars
-//   2. Sidebars (rooms, notifications, pm, settings)
-//   3. Header buttons (menu, pm-slot, notif-slot, king-room-btn)
-//   4. Backdrop + إغلاق بـ Escape
-//   5. أزرار الإعدادات (logout، إلخ)
+// ⭐ v2.1: openProfile يستخدم QamarProfile (modal) بدل iframe
 // ==============================================
 
 (function () {
@@ -26,9 +21,6 @@
         error: function () { console.error.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments))); }
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* State                                           */
-    /* ══════════════════════════════════════════════ */
     const State = {
         els: {},
         currentSidebar: null,
@@ -37,9 +29,6 @@
         _initialized: false
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* Helpers                                         */
-    /* ══════════════════════════════════════════════ */
     function _q(sel) { return document.querySelector(sel); }
     function _qa(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
     function _byId(id) { return document.getElementById(id); }
@@ -98,30 +87,25 @@
     /* ══════════════════════════════════════════════ */
     function _findEls() {
         State.els = {
-            // Bottom nav
             bottomNav: _byId('bottom-nav'),
             navBtns: _qa('.nav-btn'),
 
-            // Header
             menuBtn: _byId('menu-btn'),
             pmSlot: _byId('pm-slot'),
             notifSlot: _byId('notif-slot'),
             kingRoomBtn: _byId('king-room-btn'),
 
-            // Sidebars
             sidebarBackdrop: _byId('sidebar-backdrop'),
             sidebarRooms: _byId('sidebar-rooms'),
             sidebarNotif: _byId('sidebar-notifications'),
             sidebarPM: _byId('sidebar-pm'),
             sidebarSettings: _byId('sidebar-settings'),
 
-            // Sidebar bodies
             roomsList: _byId('rooms-list'),
             notifList: _byId('notifications-list'),
             pmChatsList: _byId('pm-chats-list'),
             settingsList: _byId('settings-list'),
 
-            // PM Modal
             pmModal: _byId('pm-modal'),
             pmBack: _byId('pm-back'),
             pmPeerAvatar: _byId('pm-peer-avatar'),
@@ -139,7 +123,7 @@
     /* ══════════════════════════════════════════════ */
     function openSidebar(name) {
         if (!name) return;
-        closeSidebar(); // أغلق المفتوح
+        closeSidebar();
 
         const sb = _sidebarEl(name);
         if (!sb) {
@@ -150,15 +134,11 @@
         sb.classList.add('open');
         State.currentSidebar = name;
 
-        // Backdrop
         if (State.els.sidebarBackdrop) {
             State.els.sidebarBackdrop.classList.remove('hidden');
         }
 
-        // حدّث bottom nav active
         _updateNavActive(name);
-
-        // fill content
         _fillSidebar(name);
 
         _emit('nav:sidebarOpened', { name: name });
@@ -177,7 +157,6 @@
             State.els.sidebarBackdrop.classList.add('hidden');
         }
 
-        // أعد الـ bottom nav للشات
         _updateNavActive(null);
     }
 
@@ -201,10 +180,10 @@
     /* Fill sidebar content                            */
     /* ══════════════════════════════════════════════ */
     function _fillSidebar(name) {
-        if (name === 'rooms')         _fillRooms();
+        if (name === 'rooms')              _fillRooms();
         else if (name === 'notifications') _fillNotifications();
-        else if (name === 'pm')       _fillPMChats();
-        else if (name === 'settings') _fillSettings();
+        else if (name === 'pm')            _fillPMChats();
+        else if (name === 'settings')      _fillSettings();
     }
 
     function _fillRooms() {
@@ -212,7 +191,6 @@
         if (!el) return;
         el.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
 
-        // استخدم QamarRooms إذا متاح
         if (!window.QamarRooms) {
             el.innerHTML = '<div class="empty-state">🚪 نظام الغرف غير جاهز</div>';
             return;
@@ -388,7 +366,6 @@
 
         el.innerHTML = '';
 
-        // بطاقة الحساب
         const card = document.createElement('div');
         card.style.cssText =
             'background:linear-gradient(135deg,rgba(212,175,55,0.12),rgba(168,85,247,0.1));' +
@@ -406,7 +383,6 @@
             '</div>';
         el.appendChild(card);
 
-        // قائمة الإعدادات
         const items = [
             { icon: '👤', label: 'بروفايلي', action: 'profile' }
         ];
@@ -438,7 +414,6 @@
             el.appendChild(btn);
         });
 
-        // معلومات إضافية
         const info = document.createElement('div');
         info.style.cssText =
             'text-align:center;color:#666;font-size:11px;padding:14px;line-height:1.7;';
@@ -470,10 +445,10 @@
             }
         } else if (action === 'profile') {
             const uid = _getCurrentUid();
-            if (uid && window.QamarNav && window.QamarNav.openProfile) {
-                window.QamarNav.openProfile(uid, _getCurrentUser().name || '');
+            if (uid) {
+                openProfile(uid, _getCurrentUser().name || '');
             } else {
-                _toast('البروفايل غير متاح بعد');
+                _toast('البروفايل غير متاح');
             }
         }
     }
@@ -484,33 +459,26 @@
     function _switchRoom(roomId) {
         if (!roomId) return;
 
-        // حدّث الـ active في القائمة
         _qa('.sidebar-item[data-room-id]').forEach(function (el) {
             el.classList.toggle('active', el.dataset.roomId === roomId);
         });
 
-        // تحديث AppState + localStorage
         if (window.AppState) {
             try { window.AppState.setRoom(roomId); } catch (e) {}
         }
         try { localStorage.setItem('qamar_last_room', roomId); } catch (e) {}
 
-        // ابدأ الشات
         if (window.QamarChat && typeof window.QamarChat.start === 'function') {
             try { window.QamarChat.start(roomId); } catch (e) {}
         }
 
-        // أطلق room:changed
         if (window.EventBus) {
             try {
                 window.EventBus.emit('room:changed', roomId, { roomId: roomId });
             } catch (e) {}
         }
 
-        // حدّث الهيدر
         _updateHeaderRoom(roomId);
-
-        // أغلق السايدبار
         closeSidebar();
 
         _toast('🚪 دخلت: ' + roomId);
@@ -556,8 +524,8 @@
         const modal = State.els.pmModal;
         if (!modal) return;
         modal.classList.remove('hidden');
+        modal.dataset.otherUid = otherUid;
 
-        // املأ الهيدر
         window.QamarFB.get('users/' + otherUid).then(function (u) {
             if (State.els.pmPeerName) State.els.pmPeerName.textContent = (u && u.name) || '—';
             if (State.els.pmPeerAvatar) {
@@ -569,7 +537,6 @@
             }
         }).catch(function () {});
 
-        // ابدأ الشات
         try { window.QamarPM.start(otherUid); } catch (e) {}
         try { window.QamarPM.markAsRead(otherUid); } catch (e) {}
 
@@ -603,14 +570,19 @@
                 } else if (nav === 'pm') {
                     openSidebar('pm');
                 } else if (nav === 'profile') {
-                    openSidebar('settings');
+                    // ⭐ v2.1: يفتح modal البروفايل مباشرة
+                    const uid = _getCurrentUid();
+                    if (uid) {
+                        openProfile(uid, _getCurrentUser().name || '');
+                    } else {
+                        openSidebar('settings');
+                    }
                 }
             });
         });
     }
 
     function _bindHeader() {
-        // Menu button
         if (State.els.menuBtn) {
             State.els.menuBtn.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -618,7 +590,6 @@
             });
         }
 
-        // PM slot
         if (State.els.pmSlot) {
             State.els.pmSlot.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -626,7 +597,6 @@
             });
         }
 
-        // Notif slot
         if (State.els.notifSlot) {
             State.els.notifSlot.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -634,7 +604,6 @@
             });
         }
 
-        // King room
         if (State.els.kingRoomBtn) {
             State.els.kingRoomBtn.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -647,7 +616,6 @@
                 }
             });
 
-            // أظهره فقط للملك
             if (_isKing()) {
                 State.els.kingRoomBtn.classList.remove('hidden');
             } else {
@@ -657,14 +625,12 @@
     }
 
     function _bindSidebarClose() {
-        // Backdrop
         if (State.els.sidebarBackdrop) {
             State.els.sidebarBackdrop.addEventListener('click', function () {
                 closeSidebar();
             });
         }
 
-        // Close buttons
         _qa('.sidebar-close').forEach(function (btn) {
             btn.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -672,7 +638,6 @@
             });
         });
 
-        // Escape
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') {
                 if (State.currentSidebar) closeSidebar();
@@ -682,7 +647,6 @@
     }
 
     function _bindPMModal() {
-        // Back
         if (State.els.pmBack) {
             State.els.pmBack.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -690,7 +654,6 @@
             });
         }
 
-        // PM menu (سنتجاهلها الآن)
         if (State.els.pmMenu) {
             State.els.pmMenu.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -698,15 +661,13 @@
             });
         }
 
-        // Send
         if (State.els.pcSend && State.els.pcInput) {
             const send = function () {
                 const text = State.els.pcInput.value.trim();
                 if (!text) return;
-                if (!window.QamarPM || !State.els.pmPeerName) return;
+                if (!window.QamarPM || !State.els.pmModal) return;
 
-                // نحتاج otherUid — من الهيدر
-                const otherUid = State.els.pmModal && State.els.pmModal.dataset.otherUid;
+                const otherUid = State.els.pmModal.dataset.otherUid;
                 if (!otherUid) return;
 
                 window.QamarPM.send(otherUid, text).then(function () {
@@ -736,33 +697,34 @@
     function _watchEvents() {
         if (!window.EventBus) return;
 
-        // عند تغير الرتب → أظهر/أخفِ زر الملك
         window.EventBus.on('rank:changed', function () {
             if (State.els.kingRoomBtn) {
                 State.els.kingRoomBtn.classList.toggle('hidden', !_isKing());
             }
         });
 
-        // عند تحديث الروم
         window.EventBus.on('room:changed', function (p) {
             const roomId = (typeof p === 'string') ? p : (p && p.roomId);
             if (roomId) _updateHeaderRoom(roomId);
         });
 
-        // عند فتح PM من مكان آخر
         window.EventBus.on('pm:open', function (p) {
             if (p && p.otherUid) _openPM(p.otherUid);
+        });
+
+        // ⭐ v2.1: فتح البروفايل من أي مكان
+        window.EventBus.on('profile:open', function (p) {
+            if (p && p.uid) openProfile(p.uid);
         });
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Watch unread counts                             */
+    /* Badges                                          */
     /* ══════════════════════════════════════════════ */
     function _updateBadges() {
         const uid = _getCurrentUid();
         if (!uid) return;
 
-        // PM unread
         if (window.QamarPM && window.QamarPM.getUnreadCount) {
             window.QamarPM.getUnreadCount().then(function (n) {
                 const badge = _byId('pm-badge');
@@ -776,7 +738,6 @@
             }).catch(function () {});
         }
 
-        // Notifications unread
         if (window.QamarFB) {
             window.QamarFB.get('user_notifications/' + uid).then(function (data) {
                 if (!data) return;
@@ -814,11 +775,9 @@
         _bindPMModal();
         _watchEvents();
 
-        // راقب unread badges
         setTimeout(_updateBadges, 3000);
         setInterval(_updateBadges, 30000);
 
-        // عند الدخول لأول مرة
         if (window.EventBus) {
             window.EventBus.on('login-flow:success', function () {
                 setTimeout(_updateBadges, 1500);
@@ -826,7 +785,7 @@
         }
 
         State._initialized = true;
-        Logger.info('📦 [nav.js] initialized');
+        Logger.info('📦 [nav.js v2.1] initialized');
         return true;
     }
 
@@ -843,6 +802,38 @@
     }
 
     /* ══════════════════════════════════════════════ */
+    /* openProfile — ⭐ v2.1: يستخدم QamarProfile      */
+    /* ══════════════════════════════════════════════ */
+    function openProfile(uid, name) {
+        // ⭐ Modal مباشر (الأفضل)
+        if (window.QamarProfile && typeof window.QamarProfile.open === 'function') {
+            try {
+                window.QamarProfile.open(uid || _getCurrentUid());
+                return;
+            } catch (e) {
+                Logger.warn('QamarProfile.open failed:', e.message);
+            }
+        }
+        // fallback: iframe القديم (يحتاج profile.html — غير موجود)
+        try {
+            localStorage.setItem('profile_target_uid', uid);
+            localStorage.setItem('profile_target_name', name || '');
+            const f = _byId('profile-frame-container');
+            const i = _byId('profile-iframe');
+            if (i && f) {
+                i.src = 'profile.html?uid=' + encodeURIComponent(uid) + '&t=' + Date.now();
+                f.classList.remove('hidden');
+                const close = _byId('pfc-close');
+                if (close) close.onclick = function () { f.classList.add('hidden'); };
+            } else {
+                _toast('البروفايل غير متاح بعد');
+            }
+        } catch (e) {
+            _toast('البروفايل غير متاح');
+        }
+    }
+
+    /* ══════════════════════════════════════════════ */
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarNav = {
@@ -853,20 +844,7 @@
         openPM: _openPM,
         closePM: _closePM,
         updateBadges: _updateBadges,
-        openProfile: function (uid, name) {
-            try {
-                localStorage.setItem('profile_target_uid', uid);
-                localStorage.setItem('profile_target_name', name || '');
-                const f = _byId('profile-frame-container');
-                const i = _byId('profile-iframe');
-                if (i && f) {
-                    i.src = 'profile.html?uid=' + encodeURIComponent(uid) + '&t=' + Date.now();
-                    f.classList.remove('hidden');
-                    const close = _byId('pfc-close');
-                    if (close) close.onclick = function () { f.classList.add('hidden'); };
-                }
-            } catch (e) {}
-        },
+        openProfile: openProfile,
         getStatus: function () {
             return {
                 initialized: State._initialized,
@@ -874,11 +852,12 @@
                 hasBottomNav: !!State.els.bottomNav,
                 hasSidebars: !!(State.els.sidebarRooms && State.els.sidebarNotif && State.els.sidebarPM && State.els.sidebarSettings),
                 hasPMModal: !!State.els.pmModal,
+                hasProfileModule: !!(window.QamarProfile),
                 isKing: _isKing(),
                 isGuest: _isGuest()
             };
         }
     };
 
-    Logger.info('📦 [nav.js] loaded');
+    Logger.info('📦 [nav.js v2.1] loaded — profile modal ready');
 })();
