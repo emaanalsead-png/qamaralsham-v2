@@ -1,9 +1,11 @@
 // ==============================================
-// security/device-guard.js
+// security/device-guard.js v2.1
 // Device identification + Multi-account detection
 // ==============================================
 // يعتمد على: firebase.js + auth.js + ranks.js
 // يعطي: window.QamarDeviceGuard
+// ==============================================
+// ✅ v2.1: ينتظر auth + الملك/المسجل فقط
 // ==============================================
 
 (function () {
@@ -13,6 +15,8 @@
         console.error('❌ [device-guard] firebase.js not loaded!');
         return;
     }
+
+    if (window.QamarDeviceGuard && window.QamarDeviceGuard.__v21) return;
 
     const LOG_TAG = '[DG]';
     const Logger = {
@@ -48,7 +52,8 @@
         listeners: [],
         banned: false,
         banInfo: null,
-        notified: false
+        notified: false,
+        _permDenied: false
     };
 
     /* ══════════════════════════════════════════════ */
@@ -72,7 +77,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Cookie helpers                                  */
+    /* Helpers                                         */
     /* ══════════════════════════════════════════════ */
     function _getCookie(name) {
         try {
@@ -90,9 +95,6 @@
         } catch (e) { return false; }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* UUID management                                 */
-    /* ══════════════════════════════════════════════ */
     function _generateUUID() {
         try {
             if (window.crypto && window.crypto.randomUUID) {
@@ -109,33 +111,16 @@
 
     function _getOrCreateUUID() {
         let uuid = null;
-
-        // 1) localStorage
         try { uuid = localStorage.getItem(CONFIG.UUID_KEY); } catch (e) {}
-
-        // 2) Cookie
         if (!uuid) uuid = _getCookie(CONFIG.UUID_COOKIE);
-
-        // 3) Generate
-        if (!uuid) {
-            uuid = _generateUUID();
-            Logger.info('New UUID generated');
-        } else {
-            Logger.debug('UUID restored');
-        }
-
+        if (!uuid) uuid = _generateUUID();
         try { localStorage.setItem(CONFIG.UUID_KEY, uuid); } catch (e) {}
         _setCookie(CONFIG.UUID_COOKIE, uuid, CONFIG.COOKIE_DAYS);
-
         return uuid;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* SHA-256                                         */
-    /* ══════════════════════════════════════════════ */
     function _sha256(str) {
         if (!str) return Promise.resolve(null);
-
         if (window.crypto && window.crypto.subtle && window.TextEncoder) {
             try {
                 const buf = new TextEncoder().encode(String(str));
@@ -164,9 +149,6 @@
         return h.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Canvas fingerprint                              */
-    /* ══════════════════════════════════════════════ */
     function _canvasRaw() {
         try {
             const canvas = document.createElement('canvas');
@@ -174,7 +156,6 @@
             canvas.height = 40;
             const ctx = canvas.getContext('2d');
             if (!ctx) return null;
-
             ctx.textBaseline = 'alphabetic';
             ctx.fillStyle = '#f60';
             ctx.fillRect(125, 1, 62, 20);
@@ -183,48 +164,38 @@
             ctx.fillText('🌙 Qamar,الشام', 2, 15);
             ctx.fillStyle = 'rgba(102,204,0,0.7)';
             ctx.fillText('🌙 Qamar,الشام', 4, 17);
-
             ctx.beginPath();
             ctx.arc(50, 25, 10, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(255,100,50,0.5)';
             ctx.fill();
-
             return canvas.toDataURL();
         } catch (e) {
             return null;
         }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Audio fingerprint                               */
-    /* ══════════════════════════════════════════════ */
     function _audioRaw() {
         return new Promise(function (resolve) {
             try {
                 const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
                 if (!AC) { resolve(null); return; }
-
                 const ctx = new AC(1, 44100, 44100);
                 const osc = ctx.createOscillator();
                 osc.type = 'triangle';
                 osc.frequency.value = 10000;
-
                 const comp = ctx.createDynamicsCompressor();
                 comp.threshold.value = -50;
                 comp.knee.value = 40;
                 comp.ratio.value = 12;
                 comp.attack.value = 0;
                 comp.release.value = 0.25;
-
                 osc.connect(comp);
                 comp.connect(ctx.destination);
                 osc.start(0);
-
                 let resolved = false;
                 const timer = setTimeout(function () {
                     if (!resolved) { resolved = true; resolve(null); }
                 }, CONFIG.AUDIO_TIMEOUT_MS);
-
                 ctx.startRendering().then(function (buffer) {
                     if (resolved) return;
                     resolved = true;
@@ -244,21 +215,14 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Hardware fingerprint (stable only)              */
-    /* ══════════════════════════════════════════════ */
     function _hardwareRaw() {
         const parts = [];
-        // ✅ ثوابت فقط — بدون بطارية، بدون شاشة، بدون لغة
         try { parts.push('cores=' + (navigator.hardwareConcurrency || 0)); } catch (e) {}
         try { parts.push('platform=' + (navigator.platform || 'x')); } catch (e) {}
         try { parts.push('touch=' + (navigator.maxTouchPoints || 0)); } catch (e) {}
         return parts.join('|');
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* IP info                                         */
-    /* ══════════════════════════════════════════════ */
     function _fetchIP() {
         return new Promise(function (resolve) {
             if (!window.fetch) { resolve(null); return; }
@@ -266,7 +230,6 @@
             const timer = setTimeout(function () {
                 if (!done) { done = true; resolve(null); }
             }, CONFIG.IP_TIMEOUT_MS);
-
             try {
                 const controller = (window.AbortController) ? new AbortController() : null;
                 const opts = controller ? { signal: controller.signal } : {};
@@ -290,21 +253,14 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Compute deviceId                                */
-    /* ══════════════════════════════════════════════ */
     function _computeDeviceId() {
         const c = State.fingerprint.canvas || 'no-canvas';
         const a = State.fingerprint.audio || 'no-audio';
         const h = State.fingerprint.hardware || 'no-hw';
-        // ⚠️ بدون UUID — بدون اسم — بدون بطارية
         const raw = 'canvas:' + c + '|audio:' + a + '|hw:' + h;
         return _sha256(raw);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Helpers                                         */
-    /* ══════════════════════════════════════════════ */
     function _sanitizeKey(s) {
         return String(s || '')
             .replace(/[.#$/\[\]\s]+/g, '_')
@@ -329,11 +285,28 @@
                 const dn = window.QamarAuth.getDisplayName();
                 if (dn) return dn;
             }
-            if (window.auth && window.auth.currentUser && window.auth.currentUser.displayName) {
-                return window.auth.currentUser.displayName;
-            }
         } catch (e) {}
         return null;
+    }
+
+    function _isKing() {
+        if (window.QamarRanks && window.QamarRanks.isKing) return window.QamarRanks.isKing();
+        return false;
+    }
+
+    function _myLevel() {
+        if (window.QamarRanks && window.QamarRanks.myLevel) return window.QamarRanks.myLevel();
+        return 0;
+    }
+
+    // ⭐ v2.1: هل نحن مؤهلون للكتابة في Firebase؟
+    function _canRegister() {
+        if (!window.auth || !window.auth.currentUser) return false;
+        if (State._permDenied) return false;
+        // الزوار لا يسجّلون أجهزة (تجنب spam)
+        const u = window.auth.currentUser;
+        if (u.isAnonymous) return false;
+        return true;
     }
 
     /* ══════════════════════════════════════════════ */
@@ -348,7 +321,6 @@
 
     function _doInit() {
         Logger.info('🔍 Initializing...');
-
         State.uuid = _getOrCreateUUID();
 
         const canvasRaw = _canvasRaw();
@@ -365,7 +337,6 @@
             State.deviceId = deviceId;
             Logger.info('✅ Device ID:', deviceId.substring(0, 12) + '...');
 
-            // IP async — لا يعطّل
             _fetchIP().then(function (info) {
                 State.ipInfo = info;
                 if (info && info.ip) {
@@ -378,15 +349,24 @@
                 : Promise.resolve();
             return authWait;
         }).then(function () {
+            // ⭐ v2.1: إذا لا مستخدم مسجل → لا نكتب
+            if (!_canRegister()) {
+                State.ready = true;
+                Logger.info('✅ Device guard ready (no-user, no-write)');
+                _emit('device:ready', { registered: false, reason: 'no-user' });
+                return State;
+            }
             return checkBan();
         }).then(function (banResult) {
-            if (banResult.banned) {
+            if (banResult && banResult.banned) {
                 State.ready = true;
                 _emit('device:ready', { banned: true, banInfo: banResult.info });
                 return State;
             }
+            if (!_canRegister()) return State;
             return registerDevice();
         }).then(function () {
+            if (!_canRegister()) return State;
             return checkNotification();
         }).then(function () {
             State.ready = true;
@@ -394,18 +374,16 @@
             _emit('device:ready', { banned: false });
             return State;
         }).catch(function (e) {
-            Logger.error('init failed:', e.message);
+            Logger.warn('init failed:', e.message);
             State.ready = true;
             _emit('device:ready', { banned: false, error: e.message });
             return State;
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Check ban                                       */
-    /* ══════════════════════════════════════════════ */
     function checkBan() {
         if (!State.deviceId) return Promise.resolve({ banned: false });
+        if (!_canRegister()) return Promise.resolve({ banned: false });
         return window.QamarFB.get('banned_devices/' + State.deviceId)
             .then(function (ban) {
                 if (ban) {
@@ -422,18 +400,15 @@
                 }
                 return { banned: false };
             })
-            .catch(function (e) {
-                Logger.warn('checkBan error:', e.message);
+            .catch(function () {
                 return { banned: false };
             });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Register device                                 */
-    /* ══════════════════════════════════════════════ */
     function registerDevice() {
         const uid = _getCurrentUid();
         if (!uid || !State.deviceId) return Promise.resolve({ registered: false });
+        if (!_canRegister()) return Promise.resolve({ registered: false, reason: 'not-eligible' });
 
         const name = _getCurrentName() || '—';
         const now = window.QamarFB.serverTime();
@@ -460,34 +435,34 @@
                 return { registered: true };
             })
             .catch(function (e) {
-                Logger.warn('registerDevice error:', e.message);
-                return { registered: false, error: e.message };
+                const msg = (e && e.message) || '';
+                // ⭐ v2.1: permission_denied → أوقف كل المحاولات
+                if (msg.indexOf('permission') !== -1 || msg.indexOf('PERMISSION') !== -1) {
+                    State._permDenied = true;
+                    Logger.info('🔒 Device registration disabled (permission denied)');
+                } else {
+                    Logger.warn('registerDevice error:', msg);
+                }
+                return { registered: false, error: msg };
             });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Check + notify multi-account                    */
-    /* ══════════════════════════════════════════════ */
     function checkNotification() {
         const uid = _getCurrentUid();
         const name = _getCurrentName();
         if (!uid || !State.deviceId || !name) {
             return Promise.resolve({ notified: false, reason: 'missing' });
         }
+        if (!_canRegister()) return Promise.resolve({ notified: false, reason: 'not-eligible' });
 
-        // 🔑 مفتاح الإشعار = name + deviceId
         const key = _sanitizeKey(name) + '__' + State.deviceId.substring(0, 16);
 
         return window.QamarFB.get('bot_data/device_seen/' + key)
             .then(function (existing) {
-                if (existing) {
-                    Logger.debug('Notification already sent for this (device + name)');
-                    return { notified: false, alreadySent: true };
-                }
+                if (existing) return { notified: false, alreadySent: true };
 
                 const payload = {
-                    uid: uid,
-                    name: name,
+                    uid: uid, name: name,
                     deviceId: State.deviceId,
                     ip: (State.ipInfo && State.ipInfo.ip) ? State.ipInfo.ip : null,
                     ipHash: State.ipHash || null,
@@ -507,24 +482,13 @@
                     return { notified: true, payload: payload };
                 });
             })
-            .catch(function (e) {
-                Logger.warn('checkNotification error:', e.message);
-                return { notified: false, error: e.message };
+            .catch(function () {
+                return { notified: false };
             });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Ban management (King only)                      */
-    /* ══════════════════════════════════════════════ */
-    function _isKing() {
-        if (window.QamarRanks && window.QamarRanks.isKing) return window.QamarRanks.isKing();
-        return false;
-    }
-
     function banDevice(deviceId, targetUid, targetName, reason) {
-        if (!_isKing()) {
-            return Promise.reject(new Error('فقط الملك يمكنه حظر الأجهزة'));
-        }
+        if (!_isKing()) return Promise.reject(new Error('فقط الملك يمكنه حظر الأجهزة'));
         if (!deviceId) return Promise.reject(new Error('deviceId مطلوب'));
 
         const payload = {
@@ -538,30 +502,23 @@
 
         return window.QamarFB.set('banned_devices/' + deviceId, payload)
             .then(function () {
-                Logger.info('🚫 Device banned');
                 _emit('device:banAdded', { deviceId: deviceId, payload: payload });
                 return { ok: true, deviceId: deviceId };
             });
     }
 
     function unbanDevice(deviceId) {
-        if (!_isKing()) {
-            return Promise.reject(new Error('فقط الملك يمكنه إلغاء الحظر'));
-        }
+        if (!_isKing()) return Promise.reject(new Error('فقط الملك'));
         if (!deviceId) return Promise.reject(new Error('deviceId مطلوب'));
-
         return window.QamarFB.remove('banned_devices/' + deviceId)
             .then(function () {
-                Logger.info('✅ Device unbanned');
                 _emit('device:banRemoved', { deviceId: deviceId });
                 return { ok: true, deviceId: deviceId };
             });
     }
 
     function listBannedDevices() {
-        if (!_isKing()) {
-            return Promise.reject(new Error('فقط الملك'));
-        }
+        if (!_isKing()) return Promise.reject(new Error('فقط الملك'));
         return window.QamarFB.children('banned_devices')
             .then(function (data) {
                 if (!data) return [];
@@ -572,9 +529,6 @@
             .catch(function () { return []; });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Getters                                         */
-    /* ══════════════════════════════════════════════ */
     function getDeviceId() { return State.deviceId; }
     function getUUID() { return State.uuid; }
     function isReady() { return State.ready; }
@@ -610,28 +564,23 @@
         ]);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Debug                                           */
-    /* ══════════════════════════════════════════════ */
     function getStatus() {
         return {
             ready: State.ready,
             deviceId: State.deviceId ? State.deviceId.substring(0, 16) + '...' : null,
             uuid: State.uuid ? State.uuid.substring(0, 12) + '...' : null,
-            canvasFP: State.fingerprint.canvas ? State.fingerprint.canvas.substring(0, 8) : null,
-            audioFP: State.fingerprint.audio ? State.fingerprint.audio.substring(0, 8) : null,
-            hardwareFP: State.fingerprint.hardware ? State.fingerprint.hardware.substring(0, 8) : null,
-            ip: State.ipInfo ? State.ipInfo.ip : null,
-            ipHash: State.ipHash ? State.ipHash.substring(0, 12) : null,
             banned: State.banned,
-            notified: State.notified
+            notified: State.notified,
+            permDenied: State._permDenied,
+            canRegister: _canRegister()
         };
     }
 
     /* ══════════════════════════════════════════════ */
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
-    const QamarDeviceGuard = {
+    window.QamarDeviceGuard = {
+        __v21: true,
         init: initDevice,
         waitReady: waitReady,
         isReady: isReady,
@@ -650,11 +599,8 @@
         getStatus: getStatus
     };
 
-    window.QamarDeviceGuard = QamarDeviceGuard;
+    Logger.info('📦 [device-guard.js v2.1] loaded — auth-wait + user-only');
 
-    Logger.info('📦 [device-guard.js] loaded');
-
-    // Auto-start بعد boot
     if (window.EventBus) {
         window.EventBus.once('boot:ready', function () {
             setTimeout(function () {
