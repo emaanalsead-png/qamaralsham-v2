@@ -1,0 +1,362 @@
+تمام، فهمت. الآن أولويتي:
+
+1. جرد شامل لميزات وأوامر v1 (لتحفظه كمرجع)
+2. فحص v2 الحالي (ما اكتمل، ما نقص، الأخطاء)
+3. خطة النت البطيء (مبدئياً للنقاش)
+
+---
+
+📋 الجزء A: الجرد الشامل لـ v1
+
+احفظ هذا الجدول في ملف منفصل — هو المرجع الكامل لكل ميزة كانت في v1 حتى لا تضيع.
+
+A.1 — تسجيل الدخول والمصادقة
+
+الميزة v1 v2
+دخول كزائر (Anonymous) ✅ ✅
+تسجيل عضو (Email/Password) ✅ ✅
+ترقية زائر → عضو ✅ UID جديد ❌ ✅ نفس UID (linkWithCredential)
+استعادة كلمة السر ❌ ✅
+تغيير كلمة السر ❌ ✅
+حذف الحساب ✅ ✅
+
+A.2 — الغرف (10 غرف في v1)
+
+ID الاسم الأيقونة النوع مايكات رؤية
+general الروم العام 🌍 عام 4 all
+quiz روم المسابقات 🎯 عام 4 all
+islamic روم الإسلاميات 🕌 عام 1 all
+royal السويت الملكي 👑 خاص 2 royal
+candy كانديز 🍫 عام 4 all
+studio استديو التسجيل 🎙️ خاص 1 owner+
+gaza غزة العزة 🇵🇸 عام 4 all
+sham ليالي الشام 🌙 عام 4 all
+bot_training تدريب البوت 🤖 مخفي 0 royal
+jail السجن 🚔 خاص 0 jailed
+
+A.3 — أوامر البوت ! (v1)
+
+الأمر الرد ملاحظة
+!مساعدة !help !أوامر !اوامر قائمة الأوامر 
+!نقاطي !نقاط نقاطك + مستواك 
+!دعاء دعاء عشوائي 
+!نكتة نكتة عشوائية 
+!سؤال طرح سؤال جديد quiz فقط
+!حكواتي <سؤال> رد حكواتي 
+!حكواتي "اكتب: حكواتي سؤالك" 
+
+A.4 — كلمات تنشّط البوت (بدون !)
+
+Triggers (hasTrigger): حكواتي, بووت, البووت, بوت, البوت
+
+Auto-reply: أي كلمة في bot_memory/hakawati_auto → رد تلقائي (cooldown 10s/user).
+
+A.5 — أوامر الملك (15 أمر)
+
+# الأمر الحد
+1 ترقية (promote) 75+
+2 تخفيض (demote) 75+
+3 تحذير (warn) 65+
+4 سجن (jail) 75+
+5 إفراج (release) 75+
+6 حظر مؤقت (banTemp) 90+
+7 حظر دائم (banPerm) 90+
+8 إلغاء حظر (unban) 90+
+9 طرد من غرفة (kickFromRoom) 80+
+10 كتم كامل (muteGlobal) 90+
+11 كتم في غرفة (muteInRoom) 90+
+12 فك كتم (unmute) 90+
+13 نقل لغرفة (transfer) 90+
+14 إهداء نقاط (givePoints) 75+
+15 حذف حساب (deleteAccount) الملك فقط
+
+A.6 — تبويبات غرفة الملك (v1)
+
+# التبويب الأيقونة
+1 نظرة عامة 📊
+2 المستخدمون 👥
+3 الرتب 🎖️
+4 الملكات 👸
+5 المعاقبون 🚫
+6 الإبلاغات 🚨
+7 الحسابات المكرّرة 🚨
+8 إدارة البان 🛡️
+9 الغرف 🚪
+10 البوتات 🤖
+11 السجان 🚔
+12 رسائل الترحيب 🚪
+13 التنبيهات 📢
+14 الإعدادات ⚙️
+15 الذاكرة 🧹 (حُقن من memory-cleaner)
+16 المحادثات الخاصة 💬 (زر في header)
+
+A.7 — البوتات (5 في v1 + v2 أضاف موسيقار)
+
+البوت ID الدور تكرار
+السجان guardian حماية + عقوبات فوري
+قمر الشام islamic أدعية كل 2 دقيقة
+الشاطر quiz مسابقات كل 5 دقائق
+حكواتي hakawati ردود فوري
+السفير ambassador ترحيب + رسائل نظام عند الدخول + كل 30 دقيقة
+موسيقار الشام musician شرح الاستوديو عند دخول studio
+
+A.8 — نظام السجان (تلقائي)
+
+الحدث الإجراء
+كلمة سجن إخفاء → تحذير + سجن تصاعدي (2→4→8→15د)
+3 سجنات حظر دائم + حظر الجهاز
+كلمة طرد حظر دائم فوري + حظر الجهاز
+حصانة 90+ معفى من العقوبات التلقائية
+
+A.9 — الخاص (PM) — WhatsApp-style
+
+الميزة v1 v2
+✓ أُرسلت / ✓✓ وصلت / ✓✓ قُرئت ❌ ✅
+جاري الكتابة ❌ ✅
+Rate 3s 1s
+الرد ✅ ✅
+تعديل ✅ ✅
+حذف ✅ soft ✅ soft
+حظر ✅ ✅
+إبلاغ ✅ ✅
+استدعاء السجان ✅ ✅
+صوتيات تُسمع مرة ✅ ✅
+أرشفة بعد 100 ✅ ✅
+الملك يقرأ الكل ✅ ✅
+
+A.10 — البروفايل (22 حقل)
+
+avatar, cover, coverType, name, bio, nameColor, nameGradient, nameBgColor, nameBgGradient, cinemaTextStyle, cinemaBgStyle, avatarFrame, profileGlow, profileBgType, profileBgValue, musicURL, poetry, poetryBg, poetryAttachment, country, family
+
++ 40 نمط سينمائي (v1) → 42 نمط (v2)
+
+A.11 — الحالات (Stories)
+
+الميزة v1
+نص/صورة/فيديو ✅
+مدة 24 ساعة
+خصوصية public/friends/online/private
+مشاهدات/تفاعلات/ردود ✅
+Live stats لصاحب الحالة ✅
+Cleaner كل 6 ساعات
+Mini mode ✅
+الملك يرى الكل ✅
+
+A.12 — الصوت (Voice)
+
+الميزة v1
+WebRTC Mesh (حتى 4) ✅
+Mic slots + heartbeat 20s ✅
+كتم شخصي (لكل مستمع) ✅
+طرد من المايك (65+) ✅
+موسيقى في slot ✅
+استوديو (80+) 5 دقائق + 6 مؤثرات ✅
+مراقبة مشبوهين → Telegram ✅
+PM Voice (3min/5MB) ✅
+
+A.13 — الرفع
+
+الخدمة v1
+Telegram ✅
+imgbb ✅
+catbox / 0x0 / uguu ✅ fallback
+Race للصوت (3 بالتوازي) ✅
+
+A.14 — أدوات مساعدة
+
+الأداة v1
+النرد (3D + نقاط) ✅
+يوتيوب (بحث + تشغيل mini) ✅
+الرسام (Fabric.js) ✅
+النص المميز [sty:BASE64] ✅
+Emoji Picker (3 أقسام + custom) ✅
+الشريط العائم (7 أدوات) ✅
+
+A.15 — قيود الزائر
+
+ميزة مسموح/ممنوع
+الكتابة في العام ✅
+تبديل الغرف العامة ✅
+عرض المتواجدين ✅
+خاص (PM) ❌
+رفع ملفات ❌
+إطارات/سينما ❌
+النرد ❌
+تنبيهات ❌
+بروفايل ❌
+غرفة الملك ❌
+رؤية UID ❌
+
+A.16 — الأصوات
+
+· صوت العصفور (منشن) — throttled كل 2s
+· صوت رسالة خاصة — cooldown 30s
+· صوت الترحيب (نوتات C-E-G)
+· صافرة شرطة (السجان)
+· صوت تحذير (استدعاء السجان)
+· أصوات النرد (clacks)
+· صوت تنبيه الغرفة
+
+A.17 — حدود Rate (v1)
+
+الإجراء الحد
+رسالة غرفة 5 ثواني
+رسالة خاصة 3s → 1s في v2
+max طول رسالة 2000 حرف
+تنبيه غرفة غير محدد
+
+A.18 — الأمان/الجهاز
+
+· بصمة UUID (localStorage + Cookie)
+· بصمة IP (ipwho.is)
+· بصمة Canvas + Audio + Hardware (v2)
+· حظر جهاز (banned_devices)
+· حظر IP (banned_ips)
+· تنبيهات الحسابات المكرّرة → الملك
+
+---
+
+🔍 الجزء B: فحص v2 الحالي
+
+B.1 — ما اكتمل (39 ملف)
+
+✅ core/ (5) · firebase/ (4) · auth/ (4) · security/ (5) · chat/ (4) · rooms/ (3) · pm/ (4) · voice/ (3) · bots/ (4) · king/ (3)
+
+B.2 — ما لم يكتمل (22 ملف + ملفات مساندة)
+
+المجلد العدد الأولوية
+stories/ 2 🟠
+media/ 4 🔴 (الرفع أساسي)
+effects/ 2 🟠
+notifications/ 2 🟠
+ui/ 4 🔴 (الواجهة)
+guest/ 1 🟠
+social/ 2 🟡
+misc/ 4 🟡
+debug/ 1 🟡
+styles/ ~8 🔴
+index.html الحقيقي 1 🔴
+rules.json 1 🟢 (بعد v1)
+sw.js + manifest.json 2 🟠
+room-picker.js 1 🔴 (ضروري للدخول)
+
+B.3 — الأخطاء المؤكدة في v2
+
+# الملف الخطأ الخطورة
+1 bot-training.js سطر مكرر _openDlg(...).then_ = true; يسبب TypeError ويُعطّل زر تعديل الكلمات 🔴
+2 voice-monitor.js createMediaElementSource يُستدعى مرة واحدة فقط لكل <audio> — المراقبة تفشل بعد أول مرة 🔴
+3 pm-voice.js الملك لا يُسجَّل played:true — الصوتية لا تُحذف أبداً 🟠
+4 suspects.js isSuspect() ترجع boolean أو Promise<boolean> حسب الحالة — يسبب crashes 🟠
+5 king-room.js البحث يفقد التركيز (يعيد بناء التاب كامل) 🟠
+6 bot-commands.js _pmScanRecent يقرأ كامل user_private_messages كل 5 دقائق → استهلاك Spark هائل 🔴
+7 rooms.js _loadRoomMutes(force) يتجاهل المعامل 🟢
+8 voice-studio.js shareToRoom غير مكتمل — لا يوجد listener 🟠
+9 pm-monitor.js deleteMessage معطوب + deleteMessageSafe يعمل (تفاصيل أدناه) 🟡
+
+تفصيل pm-monitor.js:
+
+· deleteMessage في الـ exports تشير إلى deleteMessageSafe ✅
+· لكن الدالة deleteMessage المعطوبة لا تزال موجودة في الملف — تشويش فقط
+
+B.4 — نقاط قوة v2 (يجب الحفاظ عليها)
+
+· 🎯 EventBus موحّد — كل التواصل بين الملفات
+· 🎯 QamarFB wrapper — لا db.ref مباشر
+· 🎯 QamarSession صريحة — 24h TTL
+· 🎯 QamarResilience — retry + circuit breaker + offline queue
+· 🎯 QamarOpt — IndexedDB + batched writes + debounce
+· 🎯 40 مفتاح صلاحية — مرونة كبيرة
+· 🎯 ترقية الزائر بنفس UID — إنجاز مهم
+· 🎯 WebRTC mesh كامل — للصوت
+· 🎯 قفل موزّع موحّد في cleaners
+
+B.5 — مخاوف معمارية
+
+1. الهمس client-side فقط — أي مستخدم يفتح console يقرأه
+2. bot-commands._pmScanRecent — استهلاك Spark مرعب (يحتاج إعادة تصميم)
+3. room-voice heartbeat كل 20s — قد يكون كثيراً على نت بطيء
+4. الملفات كلها تُحمَّل في boot.js — لا lazy load للموديولات (فقط للتابات)
+
+---
+
+🌐 الجزء C: اتجاه تحسين النت البطيء (مبدئي)
+
+C.1 — المشكلة الأساسية
+
+معماريتك الحالية تُحمّل 39 ملف JS عند بدء التشغيل. على نت بطيء (2G/3G في سوريا):
+
+· ~500KB JS خام → ~150KB مضغوط
+· 30+ اتصال Firebase عند boot
+· listener واحد على الأقل لكل موديول
+
+C.2 — الاستراتيجيات المقترحة (للنقاش)
+
+1. تقليل قراءات Firebase فوراً
+
+· 🔴 إصلاح _pmScanRecent — الأهم
+· 🟠 استخدام orderByChild('time').startAt(cutoff) بدل قراءة كامل
+· 🟠 تقليل heartbeat من 20s → 60s
+
+2. Lazy load للموديولات
+
+· 🔴 ملف boot-lite.js يشغّل الأساسيات فقط (auth + chat + rooms)
+· 🟠 الموديولات الثقيلة (king, bots, voice, stories) تُحمَّل عند الحاجة
+
+3. Connection Quality Detection
+
+· 🟠 ملف net-quality.js:
+  · يقيس زمن الاستجابة
+  · يصنف: fast / medium / slow
+  · يعدّل السلوك حسب التصنيف
+
+4. Adaptive Intervals
+
+· 🟠 heartbeat: 20s (سريع) / 60s (بطيء)
+· 🟠 typing indicator: 4s (سريع) / لا يظهر (بطيء)
+· 🟠 presence refresh: 30s → 90s
+· 🟠 cleaners: كل 6h (سريع) / كل 24h (بطيء)
+
+5. Service Worker + Cache-First
+
+· 🟠 sw.js مع Stale-While-Revalidate
+· 🟠 تخزين كل JS/CSS محلياً بعد أول تحميل
+
+6. Boot Loader متقدم
+
+· 🟠 شاشة تحميل تُظهر التقدم الحقيقي
+· 🟠 تسمح بالتفاعل مبكراً مع login screen
+
+7. تقليل حجم CSS
+
+· 🟠 دمج 8 ملفات CSS → 2 (core.css + theme.css)
+· 🟠 حذف !important الزائدة (موجودة في v1 بكثرة)
+
+8. Message Pagination أذكى
+
+· 🟠 بدل limitToLast(50) → limitToLast(20) في البداية
+· 🟠 تحميل المزيد عند التمرير (موجود في v2)
+
+C.3 — ملفات جديدة مقترحة
+
+الملف الوظيفة
+core/net-quality.js قياس + تصنيف الاتصال
+core/boot-lite.js بديل boot.js للأجهزة البطيئة
+core/adaptive.js تعديل intervals حسب net-quality
+sw.js Service Worker
+manifest.json PWA
+
+---
+
+❓ السؤال قبل المتابعة
+
+اختر مسار العمل:
+
+المسار 1 (الأسرع): نبني الملفات المتبقية كاملة (22 ملف) بنفس جودة v2 الحالية → ثم نُحسّن النت البطيء لاحقاً.
+
+المسار 2 (الأذكى): نُصلح الأخطاء الحرجة الـ 5 الآن (bot-training + voice-monitor + pm-voice + suspects + bot-commands) → ثم نبني المتبقي → ثم نُحسّن النت.
+
+المسار 3 (الأنظف): نبني net-quality.js + adaptive.js + boot-lite.js الآن → ثم نبني المتبقي مبنياً على هذه الأسس من البداية.
+
+المسار 4 (اقتراحك): قل لي خطتك.
+
+أنا أرشّح المسار 2 — نُصلح الأخطاء الحرجة أولاً (30 دقيقة) حتى لا تتراكم، ثم نبني.
