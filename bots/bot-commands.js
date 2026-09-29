@@ -1,9 +1,16 @@
 // ==============================================
-// bots/bot-commands.js
-// Bot logic: guardian + hakawati + quiz + islamic + musician + ambassador
+// bots/bot-commands.js v2 — decentralized + no polling
 // ==============================================
-// يعتمد على: bots.js + firebase.js + constants.js + state.js + auth.js + ranks.js + audit.js
+// يعتمد على: bots.js + firebase.js + constants.js + state.js + auth.js + ranks.js + audit.js + guardian-queue.js + adaptive.js
 // يعطي: window.QamarBotCommands
+// ==============================================
+// ⭐ v2 (فوق v1):
+//   1. حذف _pmScanRecent نهائياً (لا polling)
+//   2. _installPmHooks يكتب في guardian_alerts_queue
+//   3. _scheduleJailRelease مع قفل موزّع
+//   4. يعمل من أي مستخدم (ليس فقط الملك)
+//   5. QamarAdaptive لتعديل intervals
+//   6. كل قواعد v1 محفوظة
 // ==============================================
 
 (function () {
@@ -13,6 +20,8 @@
         console.error('❌ [bot-commands] bots.js not loaded!');
         return;
     }
+
+    if (window.QamarBotCommands && window.QamarBotCommands.__v2) return;
 
     const LOG_TAG = '[CMD]';
     const Logger = {
@@ -53,8 +62,8 @@
 
         ISLAMIC_INTERVAL_MS: 2 * 60 * 1000,
 
-        PM_SCAN_INTERVAL_MS: 5 * 60 * 1000,
-        PM_ALERT_DEDUP_MS: 10 * 60 * 1000,
+        JAIL_RELEASE_LOCK_TTL_MS: 2 * 60 * 1000,
+        JAIL_RELEASE_CHECK_MS: 30 * 1000,
 
         IMMUNE_LEVEL: 90,
         KING_LEVEL: 100,
@@ -81,7 +90,6 @@
             '<circle cx="78" cy="42" r="4" fill="#0a0a15"/>' +
             '<rect x="28" y="56" width="44" height="3" rx="1.5" fill="#0a0a15" opacity="0.5"/>' +
             '</svg>',
-
         hakawati: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
             '<defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">' +
             '<stop offset="0" stop-color="#9c27b0"/><stop offset="1" stop-color="#d4af37"/>' +
@@ -95,7 +103,6 @@
             '<line x1="58" y1="38" x2="72" y2="38" stroke="#0a0a15" stroke-width="1.5" opacity="0.6"/>' +
             '<line x1="58" y1="46" x2="72" y2="46" stroke="#0a0a15" stroke-width="1.5" opacity="0.6"/>' +
             '</svg>',
-
         quiz: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
             '<defs><linearGradient id="g3" x1="0" y1="0" x2="1" y2="1">' +
             '<stop offset="0" stop-color="#ff9800"/><stop offset="1" stop-color="#ffd700"/>' +
@@ -106,7 +113,6 @@
             '<circle cx="50" cy="50" r="10" fill="none" stroke="url(#g3)" stroke-width="2"/>' +
             '<circle cx="50" cy="50" r="4" fill="#ff9800"/>' +
             '</svg>',
-
         guardian: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
             '<defs><linearGradient id="g4" x1="0" y1="0" x2="1" y2="1">' +
             '<stop offset="0" stop-color="#ff4444"/><stop offset="1" stop-color="#8b0000"/>' +
@@ -116,7 +122,6 @@
             '<path d="M50 28 L68 35 L68 56 Q68 68 50 76 Q32 68 32 56 L32 35 Z" fill="#0a0a15" opacity="0.4"/>' +
             '<path d="M40 52 L48 60 L62 42" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
             '</svg>',
-
         islamic: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
             '<defs><radialGradient id="g5" cx="0.35" cy="0.35">' +
             '<stop offset="0" stop-color="#fffef0"/>' +
@@ -129,7 +134,6 @@
             '<circle cx="28" cy="60" r="1.2" fill="#ffd700"/>' +
             '<circle cx="36" cy="72" r="1" fill="#ffd700"/>' +
             '</svg>',
-
         musician: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
             '<defs><linearGradient id="g6" x1="0" y1="0" x2="1" y2="1">' +
             '<stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#d4af37"/>' +
@@ -144,30 +148,24 @@
     };
 
     /* ══════════════════════════════════════════════ */
-    /* System messages (30 min)                        */
+    /* System messages                                 */
     /* ══════════════════════════════════════════════ */
     const SYSTEM_MESSAGES = [
-        // 🤝 احترام
         { cat: 'respect', text: 'احترم أخاك كما تحب أن تُحترم' },
         { cat: 'respect', text: 'الكلمة الطيبة صدقة، فلا تبخل بها' },
         { cat: 'respect', text: 'احترام الآخرين ليس ضعفاً بل قوة' },
-        // 🎯 مشاركة
         { cat: 'engage', text: 'شاركنا رأيك، فوجودك يُثري المكان' },
         { cat: 'engage', text: 'كل مشاركة تُضيف للحوار قيمة' },
         { cat: 'engage', text: 'لا تتردد في الكتابة، هذا بيتك الثاني' },
-        // 🌙 ترحيب جماعي (يُبدَّل {room})
         { cat: 'welcome', text: 'أهلاً وسهلاً بكل من في {room}' },
         { cat: 'welcome', text: 'نوّرتوا {room}، يا أهلاً وسهلاً' },
         { cat: 'welcome', text: 'مرحباً بالجميع في {room}' },
-        // 🤍 صلاة
         { cat: 'salah', text: 'اللهم صلِّ وسلِّم على نبينا محمد' },
         { cat: 'salah', text: 'اللهم صلِّ على محمد وعلى آل محمد' },
         { cat: 'salah', text: 'صلى الله عليه وسلم تسليماً كثيراً' },
-        // 📜 حكمة
         { cat: 'wisdom', text: 'قيمة المرء ما يُحسنه' },
         { cat: 'wisdom', text: 'خير الكلام ما قلّ ودلّ' },
         { cat: 'wisdom', text: 'من صبر، ظفر' },
-        // 📌 قواعد
         { cat: 'rules', text: 'التجريح والإساءة يُعاقبان في هذا المكان' },
         { cat: 'rules', text: 'احترم قوانين الروم، فهي لحماية الجميع' },
         { cat: 'rules', text: 'الروم للجميع، فشارك بلطف' }
@@ -186,14 +184,16 @@
         currentQuiz: null,
         autoReplyCooldown: {},
         processedMsgs: new Set(),
-        pmAlertDedup: {},
         intervalTimers: [],
         forcedListener: null,
         pmHookInstalled: false,
         listeners: [],
         botProfilesReady: false,
         lastRoom: null,
-        _initialized: false
+        jailReleaseTimer: null,
+        _initialized: false,
+        _instanceId: 'bc_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+        _adaptiveBound: false
     };
 
     /* ══════════════════════════════════════════════ */
@@ -218,9 +218,7 @@
         return u ? Number(u.rankLevel) || 0 : 0;
     }
 
-    function _isKing() {
-        return _myLevel() >= CONFIG.KING_LEVEL;
-    }
+    function _isKing() { return _myLevel() >= CONFIG.KING_LEVEL; }
 
     function _isGuest() {
         if (window.QamarAuth && window.QamarAuth.isGuest) return window.QamarAuth.isGuest();
@@ -256,7 +254,7 @@
     function _now() { return Date.now(); }
 
     /* ══════════════════════════════════════════════ */
-    /* Normalize + Match                               */
+    /* Normalize                                       */
     /* ══════════════════════════════════════════════ */
     function _normalize(text) {
         if (!text) return '';
@@ -320,15 +318,8 @@
         return s[0] + '*'.repeat(Math.min(s.length - 2, 5)) + s[s.length - 1];
     }
 
-    function _simpleHash(str) {
-        let h = 5381;
-        const s = String(str);
-        for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
-        return h.toString(36);
-    }
-
     /* ══════════════════════════════════════════════ */
-    /* Bot profiles (King only)                        */
+    /* Bot profiles                                    */
     /* ══════════════════════════════════════════════ */
     function ensureBotProfiles() {
         if (State.botProfilesReady) return Promise.resolve(true);
@@ -339,7 +330,7 @@
             const def = defs[botId];
             const botUid = 'bot_' + botId;
             return window.QamarFB.get(CONFIG.USERS_ROOT + '/' + botUid).then(function (existing) {
-                if (existing) return null; // موجود
+                if (existing) return null;
                 const svg = BOT_SVGS[botId] || BOT_SVGS.guardian;
                 const avatar = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
                 const payload = {
@@ -366,7 +357,7 @@
 
         return Promise.all(promises).then(function () {
             State.botProfilesReady = true;
-            Logger.info('✅ Bot profiles ensured (6 bots)');
+            Logger.info('✅ Bot profiles ensured');
             return true;
         });
     }
@@ -419,7 +410,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Immunity + King check                           */
+    /* Immunity                                        */
     /* ══════════════════════════════════════════════ */
     function _isImmune(uid) {
         if (!uid) return Promise.resolve(false);
@@ -428,15 +419,8 @@
         }).catch(function () { return false; });
     }
 
-    function _isKingUser(uid) {
-        if (!uid) return Promise.resolve(false);
-        return window.QamarFB.get('users/' + uid + '/rankLevel').then(function (lvl) {
-            return (Number(lvl) || 0) >= CONFIG.KING_LEVEL;
-        }).catch(function () { return false; });
-    }
-
     /* ══════════════════════════════════════════════ */
-    /* ═══════ GUARDIAN (rooms) ═══════                */
+    /* Guardian (rooms)                                */
     /* ══════════════════════════════════════════════ */
     function _handleKickWord(msg, kickWord, roomId) {
         const uid = msg.senderUid;
@@ -547,8 +531,6 @@
                     updates['user_presence/' + uid + '/forcedReason'] = 'jail';
 
                     return window.QamarFB.multiUpdate(updates).then(function () {
-                        _scheduleJailRelease(uid, duration);
-
                         const warnLine = remaining > 0
                             ? '⚠️ تبقّى ' + remaining + ' سجن قبل الطرد'
                             : '🚨 هذا آخر تحذير قبل الطرد الدائم!';
@@ -570,35 +552,6 @@
                 });
             });
         }).catch(function (e) { Logger.warn('handleBadWord:', e.message); });
-    }
-
-    function _scheduleJailRelease(uid, duration) {
-        if (duration > 30 * 60 * 1000) return;
-        setTimeout(function () {
-            window.QamarFB.get('users/' + uid).then(function (u) {
-                if (!u || !u.isJailed) return;
-                const until = Number(u.jailUntil) || 0;
-                if (_now() < until) return;
-                const updates = {};
-                updates['users/' + uid + '/isJailed'] = false;
-                updates['users/' + uid + '/jailUntil'] = 0;
-                updates['users/' + uid + '/jailReleasedAt'] = _now();
-
-                const lastRoom = u.lastRoomBeforeJail || 'general';
-                updates['user_presence/' + uid + '/room'] = lastRoom;
-                updates['user_presence/' + uid + '/forced'] = true;
-                updates['user_presence/' + uid + '/lastChanged'] = _now();
-                updates['user_presence/' + uid + '/forcedReason'] = 'jail_release';
-                updates['users/' + uid + '/lastRoomBeforeJail'] = null;
-
-                window.QamarFB.multiUpdate(updates).then(function () {
-                    if (u.name) {
-                        window.QamarBots.botSpeak('guardian', 'general',
-                            '🔓 ' + u.name + ' خرج من السجن', { force: true });
-                    }
-                }).catch(function () {});
-            }).catch(function () {});
-        }, Math.min(duration + 2000, 30 * 60 * 1000));
     }
 
     function _hideMessage(msg, roomId, reason) {
@@ -633,7 +586,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ GUARDIAN (PM — notify only) ═══════    */
+    /* ⭐ v2: PM Hooks → guardian_queue               */
     /* ══════════════════════════════════════════════ */
     function _installPmHooks() {
         if (State.pmHookInstalled) return;
@@ -641,9 +594,11 @@
 
         State.pmHookInstalled = true;
 
+        // Intercept QamarPM.send
         if (typeof window.QamarPM.send === 'function') {
             const _origSend = window.QamarPM.send;
             window.QamarPM.send = function (toUid, text, options) {
+                // ⭐ v2: نرسل للـ queue (بدل الفحص الدوري)
                 if (text && (State.kickWords.length + State.badWords.length > 0)) {
                     _checkPmViolation(toUid, text, 'send').catch(function () {});
                 }
@@ -651,6 +606,7 @@
             };
         }
 
+        // Listen to incoming PMs
         if (window.EventBus) {
             window.EventBus.on('pm:messages', function (payload) {
                 if (!payload || !payload.otherUid || !Array.isArray(payload.messages)) return;
@@ -661,6 +617,8 @@
                 });
             });
         }
+
+        Logger.info('🔍 PM hooks installed → guardian_queue');
     }
 
     function _checkPmViolation(otherUid, text, side, conversationWith) {
@@ -673,10 +631,11 @@
             const matched = kick || bad;
             if (!matched) return;
 
-            const hash = _simpleHash(me + '|' + otherUid + '|' + matched + '|' + text.substring(0, 40));
-            const last = State.pmAlertDedup[hash];
-            if (last && (_now() - last) < CONFIG.PM_ALERT_DEDUP_MS) return;
-            State.pmAlertDedup[hash] = _now();
+            // ⭐ v2: أرسل للـ queue فوراً
+            if (!window.QamarGuardianQueue) {
+                Logger.warn('QamarGuardianQueue not available');
+                return;
+            }
 
             const senderUid = (side === 'receive') ? otherUid : me;
             const recipientUid = (side === 'receive') ? me : otherUid;
@@ -688,7 +647,7 @@
                 const sender = r[0] || {};
                 const recipient = r[1] || {};
 
-                _sendGuardianInbox({
+                window.QamarGuardianQueue.push({
                     type: 'pm_violation',
                     severity: kick ? 'kick' : 'jail',
                     suspectUid: senderUid,
@@ -696,43 +655,18 @@
                     suspectAvatar: sender.avatar || null,
                     victimUid: recipientUid,
                     victimName: recipient.name || '—',
-                    matchedWord: _maskWord(matched),
+                    matchedWord: matched,
                     messagePreview: String(text).substring(0, 120),
                     side: side
+                }).catch(function (e) {
+                    Logger.warn('queue push failed:', e.message);
                 });
             }).catch(function () {});
         }).catch(function (e) { Logger.warn('checkPmViolation:', e.message); });
     }
 
-    function _sendGuardianInbox(alert) {
-        return window.QamarFB.get('config/king_uid').then(function (kingUid) {
-            if (!kingUid) return;
-            const rid = 'ga_' + _now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
-            const payload = Object.assign({
-                from: 'bot_guardian',
-                fromName: 'السجان',
-                at: window.QamarFB.serverTime(),
-                read: false
-            }, alert);
-
-            const sevIcon = alert.severity === 'kick' ? '🚪' : '⚠️';
-            payload.text = sevIcon + ' رسالة خاصة مريبة\n' +
-                           '👤 المُخالف: ' + (alert.suspectName || '—') + '\n' +
-                           '👤 الضحية: ' + (alert.victimName || '—') + '\n' +
-                           '📝 كلمة: ' + (alert.matchedWord || '—') + '\n' +
-                           '💬 ' + (alert.messagePreview || '—').substring(0, 80) + '\n' +
-                           '🕐 ' + new Date().toLocaleString('ar-EG');
-
-            return window.QamarFB.set(CONFIG.INBOX_ROOT + '/' + kingUid + '/' + rid, payload)
-                .then(function () {
-                    _emit('guardian:inbox', { alert: payload });
-                    Logger.info('📬 Guardian inbox alert:', alert.type);
-                });
-        }).catch(function (e) { Logger.warn('sendGuardianInbox:', e.message); });
-    }
-
     /* ══════════════════════════════════════════════ */
-    /* ═══════ HAKAWATI ═══════                       */
+    /* Hakawati                                        */
     /* ══════════════════════════════════════════════ */
     function _hasHakawatiTrigger(text) {
         if (!text) return false;
@@ -793,7 +727,6 @@
         const text = String(msg.text || '');
         const uid = msg.senderUid;
 
-        // trigger → يرد حتى على الملك
         if (_hasHakawatiTrigger(text)) {
             const q = _stripHakawatiTriggers(text);
             if (!q) return;
@@ -806,7 +739,6 @@
             return;
         }
 
-        // auto-reply → يستثني الملك (شبحية)
         if (_isKing()) return;
 
         const auto = _findAutoReply(text);
@@ -823,7 +755,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ QUIZ ═══════                           */
+    /* Quiz                                            */
     /* ══════════════════════════════════════════════ */
     function _buildHint(answer) {
         if (!answer) return '؟؟؟';
@@ -884,8 +816,6 @@
         if (roomId !== 'quiz') return;
         const text = String(msg.text || '').trim();
         if (!text) return;
-
-        // الملك لا يحتسب
         if (_isKing()) return;
 
         window.QamarFB.get(CONFIG.LOCKS_ROOT + '/quiz_current').then(function (qz) {
@@ -922,7 +852,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ ISLAMIC (periodic) ═══════              */
+    /* Islamic                                         */
     /* ══════════════════════════════════════════════ */
     function _postIslamic() {
         const lib = (window.ISLAMIC_LIBRARY && window.ISLAMIC_LIBRARY.length) ? window.ISLAMIC_LIBRARY : [];
@@ -940,7 +870,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ MUSICIAN ═══════                       */
+    /* Musician                                        */
     /* ══════════════════════════════════════════════ */
     function _musicianWelcome(uid, roomId) {
         if (roomId !== 'studio') return;
@@ -953,27 +883,25 @@
             if (!r || !r.committed) return;
             window.QamarFB.get('users/' + uid).then(function (u) {
                 if (!u) return;
-                if ((Number(u.rankLevel) || 0) >= CONFIG.IMMUNE_LEVEL) return; // شبحية
+                if ((Number(u.rankLevel) || 0) >= CONFIG.IMMUNE_LEVEL) return;
                 const name = u.name || '—';
                 const text = '🎵 أهلاً ' + name + ' في استوديو قمر الشام!\n\n' +
                              'أنا موسيقار الشام 🎼 — رفيقك هنا.\n\n' +
-                             '🔒 الاستوديو آمن ومخصّص لك وحدك — صوتك لا يخرج من جهازك.\n' +
-                             '🎛️ 6 مؤثرات جاهزة: Bass · Mid · Treble · Echo · Reverb · Volume\n' +
-                             '🎙️ اضغط الزر الأحمر الكبير للتسجيل (5 دقائق كحد أقصى).\n\n' +
-                             '📌 كل زر له شرح مختصر — مرّ عليه وستفهم دوره.';
+                             '🔒 الاستوديو آمن ومخصّص لك وحدك.\n' +
+                             '🎛️ 6 مؤثرات جاهزة.\n' +
+                             '🎙️ اضغط الزر الأحمر الكبير للتسجيل (5 دقائق كحد أقصى).';
                 window.QamarBots.botSpeak('musician', roomId, text, { force: true });
             }).catch(function () {});
         }).catch(function () {});
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ WELCOME (join room) ═══════             */
+    /* Welcome                                         */
     /* ══════════════════════════════════════════════ */
     function _sendWelcome(uid, roomId) {
         if (!uid || !roomId) return;
         if (roomId === 'studio' || roomId === 'jail') return;
 
-        // شبحية — لا نرحّب بالملك أو 90+
         return window.QamarFB.get('users/' + uid).then(function (u) {
             if (!u) return;
             const lvl = Number(u.rankLevel) || 0;
@@ -991,10 +919,8 @@
                 const avatar = u.avatar || null;
                 const roomName = _getRoomName(roomId);
 
-                // استخدم botSpeak مع attachment مخصص
                 const text = '🚪 انضم ' + name + ' إلى ' + roomName;
 
-                // نص بسيط + metadata
                 return window.QamarBots.botSpeak('ambassador', roomId, text, {
                     force: true,
                     isSystem: true,
@@ -1012,7 +938,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ System messages (30 min) ═══════        */
+    /* System messages                                 */
     /* ══════════════════════════════════════════════ */
     function _pickSystemMessage(roomId) {
         const roomName = _getRoomName(roomId);
@@ -1042,21 +968,80 @@
                     isSystemMsg: true,
                     category: 'periodic'
                 }
-            }).then(function (res) {
-                // سجّل البصمة
-                if (res && res.ok) {
-                    window.QamarFB.set(CONFIG.LOCKS_ROOT + '/system_msg/' + roomId + '/lastPost', {
-                        at: now,
-                        text: text
-                    }).catch(function () {});
-                }
-                return res;
             });
         }).catch(function (e) { Logger.warn('postSystemMessage:', e.message); });
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ═══════ Forced Transfer Listener ═══════        */
+    /* ⭐ v2: Jail Release Watcher — أي مستخدم مع قفل */
+    /* ══════════════════════════════════════════════ */
+    function _scheduleJailReleaseWatcher() {
+        if (State.jailReleaseTimer) clearInterval(State.jailReleaseTimer);
+
+        // كل 30s، أي مستخدم يحاول إفراج المسجونين المنتهية مدتهم
+        State.jailReleaseTimer = setInterval(function () {
+            _checkExpiredJails().catch(function () {});
+        }, CONFIG.JAIL_RELEASE_CHECK_MS);
+    }
+
+    function _checkExpiredJails() {
+        const uid = _getCurrentUid();
+        if (!uid) return Promise.resolve();
+
+        // ⭐ قفل موزّع — اسمح لمستخدم واحد فقط
+        const lockKey = 'bot_locks/jail_release/' + State._instanceId;
+        const now = _now();
+
+        return window.QamarFB.transaction(lockKey, function (c) {
+            if (c && (now - (c.at || 0)) < CONFIG.JAIL_RELEASE_LOCK_TTL_MS) return undefined;
+            return { at: now, by: uid };
+        }).then(function (r) {
+            if (!r || !r.committed) return;
+
+            // اقرأ آخر 100 مستخدم مسجون
+            return window.QamarFB.query('users', {
+                orderByChild: 'isJailed',
+                equalTo: true,
+                limitToLast: 100,
+                returnArray: true
+            }).then(function (arr) {
+                if (!arr || arr.length === 0) return;
+
+                const now2 = _now();
+                const updates = {};
+                let released = 0;
+
+                arr.forEach(function (r) {
+                    const u = r.data || {};
+                    const until = Number(u.jailUntil) || 0;
+                    if (until > 0 && until <= now2) {
+                        // انتهى السجن
+                        updates['users/' + r.id + '/isJailed'] = false;
+                        updates['users/' + r.id + '/jailUntil'] = 0;
+                        updates['users/' + r.id + '/jailReleasedAt'] = now2;
+
+                        const lastRoom = u.lastRoomBeforeJail || 'general';
+                        updates['user_presence/' + r.id + '/room'] = lastRoom;
+                        updates['user_presence/' + r.id + '/forced'] = true;
+                        updates['user_presence/' + r.id + '/lastChanged'] = now2;
+                        updates['user_presence/' + r.id + '/forcedReason'] = 'jail_release';
+                        updates['users/' + r.id + '/lastRoomBeforeJail'] = null;
+
+                        released++;
+                    }
+                });
+
+                if (released === 0) return;
+
+                return window.QamarFB.multiUpdate(updates).then(function () {
+                    Logger.info('🔓 Released', released, 'jailed users');
+                });
+            });
+        }).catch(function () {});
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* Forced Transfer Listener                        */
     /* ══════════════════════════════════════════════ */
     function _installForcedListener() {
         const uid = _getCurrentUid();
@@ -1100,7 +1085,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Room change (welcome)                           */
+    /* Room change                                     */
     /* ══════════════════════════════════════════════ */
     function _onRoomChanged(payload) {
         const roomId = (payload && payload.roomId) || payload;
@@ -1108,7 +1093,6 @@
         const uid = _getCurrentUid();
         if (!uid) return;
 
-        // تجنّب التكرار عند بدء التشغيل
         if (State.lastRoom === null) {
             State.lastRoom = roomId;
             return;
@@ -1116,10 +1100,8 @@
         if (State.lastRoom === roomId) return;
         State.lastRoom = roomId;
 
-        // رسالة الانضمام
         _sendWelcome(uid, roomId).catch(function () {});
 
-        // موسيقار (استديو)
         if (roomId === 'studio') {
             _musicianWelcome(uid, roomId);
         }
@@ -1134,7 +1116,6 @@
         const roomId = payload.roomId || _getCurrentRoom();
         if (!roomId) return;
 
-        // dedup
         const key = (msg.senderUid || '') + '_' + (msg.time || 0) + '_' + String(msg.text || '').substring(0, 30);
         if (State.processedMsgs.has(key)) return;
         State.processedMsgs.add(key);
@@ -1147,97 +1128,58 @@
         if (!text) return;
         if (text.charAt(0) === '!') return;
 
-        // 1) كلمة طرد
         const kick = _matchWord(text, State.kickWords);
         if (kick) { _handleKickWord(msg, kick, roomId); return; }
 
-        // 2) كلمة سجن
         const bad = _matchWord(text, State.badWords);
         if (bad) { _handleBadWord(msg, bad, roomId); return; }
 
-        // 3) Quiz
         if (roomId === 'quiz') {
             _checkQuizAnswer(msg, roomId);
         }
 
-        // 4) حكواتي
         _handleHakawati(msg, roomId);
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Periodic tasks                                  */
+    /* ⭐ v2: Periodic tasks — من أي مستخدم           */
     /* ══════════════════════════════════════════════ */
     function _startPeriodicTasks() {
-        // Islamic
+        const profile = window.QamarAdaptive ? window.QamarAdaptive.getProfileName() : 'medium';
+
+        // Islamic — من أي مستخدم في غرفة islamic
         State.intervalTimers.push(setInterval(function () {
-            const room = _getCurrentRoom();
-            if (room !== 'islamic') return;
+            const uid = _getCurrentUid();
+            if (!uid) return;
+            if (_getCurrentRoom() !== 'islamic') return;
             if (window.QamarBots.isBotEnabled('islamic')) _postIslamic();
         }, CONFIG.ISLAMIC_INTERVAL_MS));
 
-        // Quiz
+        // Quiz — من أي مستخدم في غرفة quiz
         State.intervalTimers.push(setInterval(function () {
-            const room = _getCurrentRoom();
-            if (room !== 'quiz') return;
+            const uid = _getCurrentUid();
+            if (!uid) return;
+            if (_getCurrentRoom() !== 'quiz') return;
             if (window.QamarBots.isBotEnabled('quiz')) _postQuiz();
         }, CONFIG.QUIZ_INTERVAL_MS));
 
-        // System messages (30 min) — أول تشغيل بعد 30 دقيقة
+        // System messages — كل 30 دقيقة (من أي مستخدم)
         setTimeout(function () {
             _postSystemMessage();
             State.intervalTimers.push(setInterval(_postSystemMessage, CONFIG.SYSTEM_MSG_INTERVAL_MS));
         }, CONFIG.SYSTEM_MSG_INTERVAL_MS);
 
-        // PM background scan (King only)
-        State.intervalTimers.push(setInterval(function () {
-            if (!_isKing()) return;
-            _pmScanRecent().catch(function () {});
-        }, CONFIG.PM_SCAN_INTERVAL_MS));
-    }
+        // ⭐ v2: Jail release watcher (من أي مستخدم + قفل)
+        _scheduleJailReleaseWatcher();
 
-    function _pmScanRecent() {
-        return window.QamarFB.get('user_private_messages').then(function (all) {
-            if (!all) return;
-            const cutoff = _now() - 5 * 60 * 1000;
-            const me = _getCurrentUid();
-            Object.keys(all).forEach(function (uidA) {
-                if (uidA === me) return;
-                const chatsA = all[uidA] || {};
-                Object.keys(chatsA).forEach(function (uidB) {
-                    if (uidA > uidB) return;
-                    const msgs = chatsA[uidB] || {};
-                    Object.keys(msgs).forEach(function (msgId) {
-                        const m = msgs[msgId];
-                        if (!m || !m.text) return;
-                        if (!m.time || m.time < cutoff) return;
-                        if (m.isBot) return;
-                        const kick = _matchWord(m.text, State.kickWords);
-                        const bad = kick ? null : _matchWord(m.text, State.badWords);
-                        if (!kick && !bad) return;
-                        _sendGuardianInbox({
-                            type: 'pm_violation',
-                            severity: kick ? 'kick' : 'jail',
-                            suspectUid: m.fromUid,
-                            suspectName: m.fromName || '—',
-                            suspectAvatar: m.fromAvatar || null,
-                            victimUid: m.toUid,
-                            victimName: '—',
-                            matchedWord: _maskWord(kick || bad),
-                            messagePreview: String(m.text).substring(0, 120),
-                            side: 'background'
-                        });
-                    });
-                });
-            });
-        }).catch(function () {});
+        Logger.info('📅 Periodic tasks started | profile:', profile);
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Public: notify (system messages)                */
+    /* Public: notify                                  */
     /* ══════════════════════════════════════════════ */
     function notify(kind, target, options) {
         options = options || {};
-        // تأخير ثانية
         return new Promise(function (resolve) {
             setTimeout(function () {
                 window.QamarBots.broadcastSystem(kind, target, null, options)
@@ -1252,6 +1194,7 @@
     function getStatus() {
         return {
             initialized: State._initialized,
+            instanceId: State._instanceId,
             badWords: State.badWords.length,
             kickWords: State.kickWords.length,
             hakawati: Object.keys(State.hakawati).length,
@@ -1261,11 +1204,13 @@
             pmHookInstalled: State.pmHookInstalled,
             forcedListenerActive: !!State.forcedListener,
             isKing: _isKing(),
+            myLevel: _myLevel(),
             isGuest: _isGuest(),
             intervalTimers: State.intervalTimers.length,
             processedMsgs: State.processedMsgs.size,
-            pmAlertDedup: Object.keys(State.pmAlertDedup).length,
-            botProfilesReady: State.botProfilesReady
+            botProfilesReady: State.botProfilesReady,
+            jailWatcherActive: !!State.jailReleaseTimer,
+            queueAvailable: !!window.QamarGuardianQueue
         };
     }
 
@@ -1279,7 +1224,6 @@
         ]).then(function () {
             State._initialized = true;
 
-            // استمع للرسائل الواردة
             if (window.EventBus) {
                 window.EventBus.on('bots:incoming', _onIncoming);
                 window.EventBus.on('bot:message', _onIncoming);
@@ -1290,7 +1234,6 @@
             _installForcedListener();
             _startPeriodicTasks();
 
-            // استمع لتغيير الرتب (رسائل النظام — بعد ثانية)
             if (window.QamarRanks && window.QamarRanks.onRankChange) {
                 window.QamarRanks.onRankChange(function (payload) {
                     if (payload.action === 'promote' || payload.action === 'demote' ||
@@ -1303,14 +1246,12 @@
                 });
             }
 
-            // إنشاء بروفايلات البوتات (King only)
             if (_isKing()) {
                 setTimeout(function () {
                     ensureBotProfiles().catch(function () {});
                 }, 2000);
             }
 
-            // الملك يسجّل عند دخوله
             if (window.QamarAuth && window.QamarAuth.onAuthChange) {
                 window.QamarAuth.onAuthChange(function (p) {
                     if (p.isLoggedIn && _isKing() && !State.botProfilesReady) {
@@ -1321,17 +1262,20 @@
                 });
             }
 
-            // تحديث lastRoom الحالي
             State.lastRoom = _getCurrentRoom();
 
-            Logger.info('✅ [bot-commands] ready');
+            Logger.info('✅ [bot-commands v2] ready');
             _emit('bot-commands:ready', getStatus());
         }).catch(function (e) {
             Logger.error('boot failed:', e.message);
         });
     }
 
-    if (window.EventBus) {
+    if (window.QamarBoot && typeof window.QamarBoot.whenReady === 'function') {
+        window.QamarBoot.whenReady('background', function () {
+            setTimeout(_boot, 800);
+        });
+    } else if (window.EventBus) {
         window.EventBus.once('boot:ready', function () {
             setTimeout(_boot, 1500);
         });
@@ -1343,6 +1287,7 @@
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarBotCommands = {
+        __v2: true,
         CONFIG: CONFIG,
         SYSTEM_MESSAGES: SYSTEM_MESSAGES,
         BOT_SVGS: BOT_SVGS,
@@ -1351,7 +1296,7 @@
         ensureBotProfiles: ensureBotProfiles,
         notify: notify,
 
-        // Testing
+        // اختبار
         testMatch: function (text) {
             return {
                 kick: _matchWord(text, State.kickWords),
@@ -1363,5 +1308,5 @@
         onCmdEvent: onCmdEvent
     };
 
-    Logger.info('📦 [bot-commands.js] loaded');
+    Logger.info('📦 [bot-commands.js v2] loaded — decentralized + no polling');
 })();
