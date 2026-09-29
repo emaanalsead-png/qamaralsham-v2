@@ -1,10 +1,10 @@
 // ==============================================
-// voice/voice-monitor.js v2 — إصلاح mediaElementSource
+// voice/voice-monitor.js v2.1 — إصلاح mediaElementSource + auth wait
 // ==============================================
 // يعتمد على: firebase.js + suspects.js + room-voice.js + voice-system.js + adaptive.js
 // يعطي: window.QamarVoiceMonitor
 // ==============================================
-// ⭐ v2 (فوق v1):
+// ⭐ v2.1 (فوق v2):
 //   1. إصلاح BUG: createMediaElementSource مرة واحدة
 //   2. Source Cache — إعادة استخدام AudioNode
 //   3. لا نُغلق audioContext بعد الإنشاء
@@ -12,7 +12,7 @@
 //   5. QamarAdaptive: heartbeat + enabled
 //   6. تسجيل أخطاء createMediaElementSource في king_alerts
 //   7. QamarBoot.whenReady بدل EventBus.once
-//   8. كل الباقي كما v1 (segments 5min + Telegram upload + lock)
+//   8. ⭐ v2.1: انتظر auth قبل قراءة telegram config (لا permission_denied)
 // ==============================================
 
 (function () {
@@ -42,7 +42,7 @@
         TELEGRAM_CONFIG_PATH: 'config/telegram',
         SEGMENT_MS: 5 * 60 * 1000,
         LOCK_TTL_MS: 10 * 60 * 1000,
-        LOCK_HEARTBEAT_MS_DEFAULT: 2 * 60 * 1000,   // سيُستبدل بـ Adaptive
+        LOCK_HEARTBEAT_MS_DEFAULT: 2 * 60 * 1000,
         MAX_RETRY_UPLOAD: 3,
         RETRY_DELAY_MS: 2000,
         UPLOAD_TIMEOUT_MS: 60000
@@ -60,10 +60,8 @@
         currentTargetName: null,
         lockAcquiredAt: 0,
 
-        // ⭐ v2: cache دائم للـ source nodes
-        sourceCache: new Map(),     // audioEl → { source, dest, ownerUid, at }
+        sourceCache: new Map(),
 
-        // audioContext — دائم، لا نُغلقه
         audioContext: null,
 
         mediaRecorder: null,
@@ -143,8 +141,6 @@
 
     function _getLockHeartbeatMs() {
         if (window.QamarAdaptive && typeof window.QamarAdaptive.get === 'function') {
-            // heartbeatMs من Adaptive (20/30/60/90s)
-            // نستخدمها × 2 لقفل المراقبة
             const base = window.QamarAdaptive.get('heartbeatMs') || 30000;
             return Math.max(base, 60000);
         }
@@ -164,10 +160,22 @@
     /* ══════════════════════════════════════════════ */
     /* Load Telegram config                            */
     /* ══════════════════════════════════════════════ */
+    // ⭐ v2.1: لا تقرأ إذا لا يوجد مستخدم
     function _loadTelegramConfig(force) {
         if (!force && State.telegram && State.telegram.botToken) {
             return Promise.resolve(State.telegram);
         }
+
+        // ⭐ لا تحاول القراءة إذا لا يوجد مستخدم
+        if (!window.auth || !window.auth.currentUser) {
+            return Promise.resolve(null);
+        }
+
+        // ⭐ الملك فقط
+        if (!_isKing()) {
+            return Promise.resolve(null);
+        }
+
         return window.QamarFB.get(CONFIG.TELEGRAM_CONFIG_PATH)
             .then(function (data) {
                 if (data && data.botToken && data.chatId) {
@@ -245,24 +253,17 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* ⭐ v2: Get or create audio source               */
+    /* Get or create audio source                      */
     /* ══════════════════════════════════════════════ */
-    /**
-     * يُرجع { source, dest } جاهزَين للاستخدام.
-     * - إذا <audio> في الكاش → أعِد استخدام
-     * - وإلا أنشئ مرة واحدة فقط
-     */
     function _getOrCreateSource(audioEl, ownerUid) {
         if (!audioEl) return null;
 
-        // هل موجود في الكاش؟
         if (State.sourceCache.has(audioEl)) {
             const cached = State.sourceCache.get(audioEl);
             Logger.debug('♻️ Reusing cached source for', ownerUid ? ownerUid.substring(0, 8) : 'audio');
             return cached;
         }
 
-        // أنشئ audioContext إذا لزم
         if (!State.audioContext) {
             try {
                 const AC = window.AudioContext || window.webkitAudioContext;
@@ -280,14 +281,11 @@
 
         const ctx = State.audioContext;
 
-        // حاول إنشاء source
         try {
             const source = ctx.createMediaElementSource(audioEl);
             const dest = ctx.createMediaStreamDestination();
 
-            // وصّل source → destination الأصلي (المستخدم يسمع)
             source.connect(ctx.destination);
-            // وصّل source → destination للتسجيل
             source.connect(dest);
 
             const entry = {
@@ -300,10 +298,8 @@
             Logger.info('✨ Created new source for', ownerUid ? ownerUid.substring(0, 8) : 'audio');
             return entry;
         } catch (e) {
-            // 💥 غالباً InvalidStateError — العنصر تم ربطه سابقاً
             Logger.error('createMediaElementSource failed:', e.message);
 
-            // سجّل في king_alerts
             _logAlert({
                 type: 'monitor_error',
                 error: e.message,
@@ -377,15 +373,13 @@
     function _beginRecording(roomId, targetUid, targetName, audioEl) {
         return new Promise(function (resolve, reject) {
             try {
-                // ⭐ v2: استخدم _getOrCreateSource
                 const entry = _getOrCreateSource(audioEl, targetUid);
                 if (!entry) {
                     return reject(new Error('فشل الوصول لعنصر الصوت'));
                 }
 
-                const { dest } = entry;
+                const dest = entry.dest;
 
-                // اختر mime
                 const mime = (window.MediaRecorder && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))
                     ? 'audio/webm;codecs=opus'
                     : 'audio/webm';
@@ -406,11 +400,9 @@
                 State.segmentIndex = 0;
                 State.totalSegments = 0;
 
-                // timer للأجزاء
                 if (State.segmentTimer) clearInterval(State.segmentTimer);
                 State.segmentTimer = setInterval(_rotateSegment, CONFIG.SEGMENT_MS);
 
-                // heartbeat للقفل — من Adaptive
                 if (State.lockHeartbeat) clearInterval(State.lockHeartbeat);
                 const hbMs = _getLockHeartbeatMs();
                 State.lockHeartbeat = setInterval(function () {
@@ -427,7 +419,7 @@
                 resolve(true);
             } catch (e) {
                 Logger.error('beginRecording failed:', e.message);
-                _cleanupRecording(false);  // لا نحذف من الـ cache
+                _cleanupRecording(false);
                 reject(e);
             }
         });
@@ -458,7 +450,6 @@
             Logger.warn('upload failed:', e.message);
         });
 
-        // استمر بالجزء التالي
         if (State.monitoring && State.currentRoom && State.mediaRecorder) {
             try {
                 const entry = State.sourceCache.get(_findAudioElement(State.currentTargetUid));
@@ -512,7 +503,6 @@
         }).then(function () {
             return _releaseLock(State.currentRoom);
         }).then(function () {
-            // ⭐ v2: احذف من الكاش فقط إذا طُلب (خروج المشتبه)
             if (cleanupCache && State.currentTargetUid) {
                 const audioEl = _findAudioElement(State.currentTargetUid);
                 if (audioEl) _removeFromSourceCache(audioEl);
@@ -524,7 +514,6 @@
         });
     }
 
-    /* ⭐ v2: تنظيف بدون إغلاق audioContext            */
     function _cleanupRecording(cleanupCache) {
         State.monitoring = false;
         State.mediaRecorder = null;
@@ -535,8 +524,6 @@
         State.segmentStartAt = 0;
         State.segmentIndex = 0;
 
-        // ⚠️ لا نُغلق audioContext
-        // ⚠️ لا نحذف من sourceCache — إلا إذا طُلب
         if (cleanupCache) {
             State.sourceCache.forEach(function (entry, audioEl) {
                 _removeFromSourceCache(audioEl);
@@ -665,7 +652,6 @@
 
         if (!window.QamarSuspects) return;
 
-        // ⭐ v2: نستخدم isSuspectSync (boolean فوري)
         const isSuspect = (typeof window.QamarSuspects.isSuspectSync === 'function')
             ? window.QamarSuspects.isSuspectSync(uid)
             : false;
@@ -680,7 +666,6 @@
 
         const name = (context && context.name) || '—';
 
-        // انتظر حتى ينشأ <audio>
         setTimeout(function () {
             _startMonitoring(roomId, uid, name);
         }, 1500);
@@ -692,7 +677,6 @@
 
         if (uid === State.currentTargetUid) {
             Logger.info('👋 Target left — stopping monitor + cleanup cache');
-            // ⭐ v2: cleanupCache = true (خروج نهائي)
             _stopMonitoring('target-left', true);
         }
     }
@@ -704,7 +688,17 @@
         if (State._initialized) return;
         State._initialized = true;
 
-        _loadTelegramConfig(true);
+        // ⭐ v2.1: ننتظر auth ثم نحمّل الإعدادات
+        const waitAuth = function () {
+            if (window.QamarAuth && typeof window.QamarAuth.waitForAuth === 'function') {
+                return window.QamarAuth.waitForAuth(8000);
+            }
+            return Promise.resolve();
+        };
+
+        waitAuth().then(function () {
+            return _loadTelegramConfig(true);
+        }).catch(function () {});
 
         if (window.EventBus) {
             const off1 = window.EventBus.on('voice:joined', function (p) {
@@ -726,10 +720,9 @@
             State.unsubs = [off1, off2, off3, off4, off5];
         }
 
-        // استمع لـ adaptive
         _bindAdaptive();
 
-        Logger.info('📦 [voice-monitor.js v2] started');
+        Logger.info('📦 [voice-monitor.js v2.1] started');
     }
 
     function _bindAdaptive() {
@@ -755,7 +748,7 @@
         State.unsubs = [];
         if (State.monitoring) _stopMonitoring('manual', true);
         State._initialized = false;
-        Logger.info('📦 [voice-monitor.js v2] stopped');
+        Logger.info('📦 [voice-monitor.js v2.1] stopped');
     }
 
     function isMonitoring() { return State.monitoring; }
@@ -823,12 +816,10 @@
 
         reloadTelegramConfig: function () { return _loadTelegramConfig(true); },
 
-        // اختبار يدوي
         testUpload: function (blob) {
             return _uploadToTelegram(blob, 0, 0);
         },
 
-        // ⭐ v2: للـ debugging
         clearSourceCache: function () {
             State.sourceCache.forEach(function (entry, audioEl) {
                 _removeFromSourceCache(audioEl);
@@ -839,5 +830,5 @@
         getStatus: getStatus
     };
 
-    Logger.info('📦 [voice-monitor.js v2] loaded — BUG-2 fixed + Android-friendly');
+    Logger.info('📦 [voice-monitor.js v2.1] loaded — auth-wait fix');
 })();
