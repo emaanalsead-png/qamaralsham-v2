@@ -5,6 +5,8 @@
 // يعتمد على: firebase.js + room-voice.js + auth.js + ranks.js
 // يعطي: window.QamarVoiceSystem
 // ==============================================
+// ✅ v2.2: تصدير callbacks + getters لـ voice-monitor
+// ==============================================
 
 (function () {
     'use strict';
@@ -45,16 +47,8 @@
         ICE_SERVERS: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
     };
 
@@ -75,22 +69,20 @@
         isSpeaking: false,
         muted: false,
 
-        // peers: { peerUid: { pc, audioEl, signals, reconnects } }
-        peers: {},
+        peers: {},              // { peerUid: { pc, audioEl, signals, reconnects } }
+        remoteAudios: {},       // { peerUid: audioEl }  ⭐ للـ monitor
+        speakersData: {},       // ⭐ آخر قائمة speakers
+        participantsData: {},   // ⭐ آخر قائمة participants
 
-        // signals listener
         signalsListener: null,
-
-        // speakers listener (من room-voice)
         speakersListener: null,
 
-        // personal mutes (من room-voice)
         personalMutes: {},
         personalMutedAll: false,
 
-        // تم إغلاقه بشكل صريح؟
-        explicitDisconnect: false,
+        onSpeakersChange: null,  // ⭐ callback مسجّل من voice-monitor
 
+        explicitDisconnect: false,
         listeners: [],
         _initialized: false
     };
@@ -127,10 +119,6 @@
         return CONFIG.SIGNALS_ROOT + '/' + roomId + '/signals/' + toUid;
     }
 
-    function _speakerSlotPath(roomId, slot) {
-        return CONFIG.SIGNALS_ROOT + '/' + roomId + '/speakers/' + slot;
-    }
-
     function _randomId() {
         return 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
     }
@@ -146,7 +134,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Audio analysis (كشف "يتكلم")                    */
+    /* Audio analysis                                  */
     /* ══════════════════════════════════════════════ */
     function _startAudioAnalysis() {
         if (!State.localStream) return;
@@ -168,14 +156,8 @@
     }
 
     function _stopAudioAnalysis() {
-        if (State.speakingTimer) {
-            clearInterval(State.speakingTimer);
-            State.speakingTimer = null;
-        }
-        if (State.audioContext) {
-            try { State.audioContext.close(); } catch (e) {}
-            State.audioContext = null;
-        }
+        if (State.speakingTimer) { clearInterval(State.speakingTimer); State.speakingTimer = null; }
+        if (State.audioContext) { try { State.audioContext.close(); } catch (e) {} State.audioContext = null; }
         State.analyser = null;
         State.dataArray = null;
         State.isSpeaking = false;
@@ -186,19 +168,14 @@
         try {
             State.analyser.getByteFrequencyData(State.dataArray);
             let sum = 0;
-            for (let i = 0; i < State.dataArray.length; i++) {
-                sum += State.dataArray[i];
-            }
+            for (let i = 0; i < State.dataArray.length; i++) sum += State.dataArray[i];
             const avg = sum / State.dataArray.length;
             const speaking = avg > CONFIG.SPEAKING_THRESHOLD && !State.muted;
 
             if (speaking !== State.isSpeaking) {
                 State.isSpeaking = speaking;
-                // أبلغ room-voice لتحديث الواجهة
                 if (window.QamarRoomVoice && window.QamarRoomVoice.updateSpeakingState) {
-                    try {
-                        window.QamarRoomVoice.updateSpeakingState(State.myUid, speaking);
-                    } catch (e) {}
+                    try { window.QamarRoomVoice.updateSpeakingState(State.myUid, speaking); } catch (e) {}
                 }
                 _emit('voice:speaking', { uid: State.myUid, speaking: speaking });
             }
@@ -216,22 +193,16 @@
 
         const pc = new RTCPeerConnection({ iceServers: CONFIG.ICE_SERVERS });
         const peer = {
-            pc: pc,
-            audioEl: null,
-            signals: {},
-            reconnects: 0,
-            isInitiator: !!initiator
+            pc: pc, audioEl: null, signals: {}, reconnects: 0, isInitiator: !!initiator
         };
         State.peers[peerUid] = peer;
 
-        // أضف المسارات المحلية
         if (State.localStream) {
             State.localStream.getTracks().forEach(function (track) {
                 pc.addTrack(track, State.localStream);
             });
         }
 
-        // ICE candidates
         pc.onicecandidate = function (ev) {
             if (ev.candidate) {
                 _sendSignal(peerUid, 'ice', {
@@ -242,14 +213,12 @@
             }
         };
 
-        // استقبل صوت الطرف
         pc.ontrack = function (ev) {
             Logger.debug('Track from', peerUid.substring(0, 8));
             const stream = ev.streams[0] || new MediaStream([ev.track]);
             _attachAudio(peerUid, stream);
         };
 
-        // حالة الاتصال
         pc.onconnectionstatechange = function () {
             Logger.debug('PC state:', peerUid.substring(0, 8), pc.connectionState);
             if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
@@ -258,10 +227,7 @@
             _emit('voice:peerState', { uid: peerUid, state: pc.connectionState });
         };
 
-        // أنشئ Offer إذا أنا البادئ
-        if (initiator) {
-            _createOffer(peerUid);
-        }
+        if (initiator) _createOffer(peerUid);
 
         _emit('voice:peerAdded', { uid: peerUid });
         return peer;
@@ -271,7 +237,6 @@
         const peer = State.peers[peerUid];
         if (!peer) return;
 
-        // احذف القديم
         if (peer.audioEl && peer.audioEl.parentNode) {
             peer.audioEl.parentNode.removeChild(peer.audioEl);
         }
@@ -285,7 +250,9 @@
         document.body.appendChild(audio);
         peer.audioEl = audio;
 
-        // طبّق الكتم الشخصي
+        // ⭐ نسجّل في remoteAudios للـ monitor
+        State.remoteAudios[peerUid] = audio;
+
         _applyPersonalMuteToPeer(peerUid);
     }
 
@@ -305,16 +272,14 @@
             peer.audioEl.parentNode.removeChild(peer.audioEl);
         }
         delete State.peers[peerUid];
-        if (notify !== false) {
-            _emit('voice:peerRemoved', { uid: peerUid });
-        }
+        delete State.remoteAudios[peerUid];   // ⭐
+        if (notify !== false) _emit('voice:peerRemoved', { uid: peerUid });
     }
 
     function _removeAllPeers() {
-        Object.keys(State.peers).forEach(function (uid) {
-            _removePeer(uid, false);
-        });
+        Object.keys(State.peers).forEach(function (uid) { _removePeer(uid, false); });
         State.peers = {};
+        State.remoteAudios = {};              // ⭐
     }
 
     /* ══════════════════════════════════════════════ */
@@ -329,11 +294,8 @@
             })
             .then(function (offer) {
                 _sendSignal(peerUid, 'offer', { sdp: offer.sdp, type: offer.type });
-                Logger.debug('Sent offer to', peerUid.substring(0, 8));
             })
-            .catch(function (e) {
-                Logger.warn('createOffer failed:', e.message);
-            });
+            .catch(function (e) { Logger.warn('createOffer failed:', e.message); });
     }
 
     function _handleOffer(fromUid, payload) {
@@ -345,19 +307,13 @@
             })
             .then(function (answer) {
                 _sendSignal(fromUid, 'answer', { sdp: answer.sdp, type: answer.type });
-                Logger.debug('Sent answer to', fromUid.substring(0, 8));
             })
-            .catch(function (e) {
-                Logger.warn('handleOffer failed:', e.message);
-            });
+            .catch(function (e) { Logger.warn('handleOffer failed:', e.message); });
     }
 
     function _handleAnswer(fromUid, payload) {
         const peer = State.peers[fromUid];
-        if (!peer) {
-            Logger.warn('Answer from unknown peer');
-            return;
-        }
+        if (!peer) return;
         if (peer.pc.signalingState === 'stable') return;
         return peer.pc.setRemoteDescription(new RTCSessionDescription(payload))
             .catch(function (e) { Logger.warn('handleAnswer failed:', e.message); });
@@ -372,9 +328,7 @@
             sdpMid: payload.sdpMid,
             sdpMLineIndex: payload.sdpMLineIndex
         });
-        peer.pc.addIceCandidate(cand).catch(function (e) {
-            Logger.debug('addIceCandidate failed:', e.message);
-        });
+        peer.pc.addIceCandidate(cand).catch(function () {});
     }
 
     /* ══════════════════════════════════════════════ */
@@ -384,38 +338,28 @@
         if (!State.roomId || !toUid) return Promise.resolve();
         const rid = _randomId();
         const path = _signalsPath(State.roomId, toUid) + '/' + rid;
-        const data = {
+        return window.QamarFB.set(path, {
             fromUid: State.myUid,
             type: type,
             payload: payload,
             at: window.QamarFB.serverTime()
-        };
-        return window.QamarFB.set(path, data)
-            .then(function () {
-                // احذف بعد وقت قصير (تنظيف)
-                setTimeout(function () {
-                    window.QamarFB.remove(path).catch(function () {});
-                }, CONFIG.SIGNAL_CLEANUP_MS);
-            })
-            .catch(function (e) {
-                Logger.warn('sendSignal failed:', type, e.message);
-            });
+        }).then(function () {
+            setTimeout(function () { window.QamarFB.remove(path).catch(function () {}); }, CONFIG.SIGNAL_CLEANUP_MS);
+        }).catch(function () {});
     }
 
     function _startSignalsListener() {
         _stopSignalsListener();
         if (!State.roomId || !State.myUid) return;
-
         const path = _signalsPath(State.roomId, State.myUid);
         State.signalsListener = window.QamarFB.onChildAdded(path, function (data, rid) {
             if (!data || !data.fromUid || !data.type) return;
-            if (data.fromUid === State.myUid) return; // لا معالجة ذاتية
+            if (data.fromUid === State.myUid) return;
             try {
                 if (data.type === 'offer') _handleOffer(data.fromUid, data.payload);
                 else if (data.type === 'answer') _handleAnswer(data.fromUid, data.payload);
                 else if (data.type === 'ice') _handleIce(data.fromUid, data.payload);
             } finally {
-                // احذف الإشارة بعد المعالجة
                 window.QamarFB.remove(path + '/' + rid).catch(function () {});
             }
         }, function () {});
@@ -437,7 +381,16 @@
 
         const path = CONFIG.SIGNALS_ROOT + '/' + State.roomId + '/speakers';
         State.speakersListener = window.QamarFB.onValue(path, function (data) {
-            _syncPeersWithSpeakers(data || {});
+            const speakers = data || {};
+            State.speakersData = speakers;
+            _syncPeersWithSpeakers(speakers);
+
+            // ⭐ v2.2: أخبر voice-monitor
+            if (typeof State.onSpeakersChange === 'function') {
+                try { State.onSpeakersChange(speakers); } catch (e) {
+                    Logger.warn('onSpeakersChange callback error:', e.message);
+                }
+            }
         }, function () {});
     }
 
@@ -454,25 +407,16 @@
         Object.keys(speakers).forEach(function (slotKey) {
             const s = speakers[slotKey];
             if (!s || !s.uid) return;
-            if (s.uid === State.myUid) return; // أنا
+            if (s.uid === State.myUid) return;
             known[s.uid] = true;
 
-            // إذا لم يكن هناك peer → أنشئه
             if (!State.peers[s.uid]) {
-                // initiator إذا slotي أصغر أو إذا كنت موجوداً قبله
-                const myNum = Number(State.mySlot);
-                const theirNum = Number(slotKey);
-                const initiator = (myNum > 0 || myNum === 0) && theirNum > myNum;
-                // قواعد بسيطة: الأكبر initiator (لتجنّب التصادم)
                 _createPeer(s.uid, true);
             }
         });
 
-        // احذف peers الذين لم يعودوا في القائمة
         Object.keys(State.peers).forEach(function (uid) {
-            if (!known[uid]) {
-                _removePeer(uid, true);
-            }
+            if (!known[uid]) _removePeer(uid, true);
         });
     }
 
@@ -483,13 +427,11 @@
         const peer = State.peers[peerUid];
         if (!peer) return;
         if (peer.reconnects >= CONFIG.MAX_RECONNECT_ATTEMPTS) {
-            Logger.warn('Max reconnects reached for', peerUid.substring(0, 8));
             _removePeer(peerUid, true);
             return;
         }
         peer.reconnects++;
         const delay = CONFIG.RECONNECT_BACKOFF_MS * peer.reconnects;
-        Logger.info('Reconnect', peer.reconnects, 'for', peerUid.substring(0, 8), 'in', delay, 'ms');
         setTimeout(function () {
             if (!State.peers[peerUid]) return;
             _removePeer(peerUid, false);
@@ -498,11 +440,10 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Public API                                      */
+    /* Connect / Disconnect                            */
     /* ══════════════════════════════════════════════ */
     function connect(roomId, slotIndex) {
         if (State.connected && State.roomId === roomId) {
-            Logger.debug('Already connected to', roomId);
             return Promise.resolve({ ok: true, already: true });
         }
         if (!roomId) return Promise.reject(new Error('roomId مطلوب'));
@@ -518,30 +459,24 @@
 
         Logger.info('🎙️ Connecting voice... room:', roomId, 'slot:', State.mySlot);
 
-        return _getUserMedia()
-            .then(function (stream) {
-                State.localStream = stream;
-                // إذا كان muted مسبقاً → عطّل tracks
-                if (State.muted) {
-                    stream.getAudioTracks().forEach(function (t) { t.enabled = false; });
-                }
-                _startAudioAnalysis();
-                _startSignalsListener();
-                _startSpeakersListener();
-                State.connected = true;
+        return _getUserMedia().then(function (stream) {
+            State.localStream = stream;
+            if (State.muted) stream.getAudioTracks().forEach(function (t) { t.enabled = false; });
+            _startAudioAnalysis();
+            _startSignalsListener();
+            _startSpeakersListener();
+            State.connected = true;
 
-                // أعلن للمكونات
-                _emit('voice:connected', { roomId: roomId, slot: State.mySlot });
-                if (window.QamarRoomVoice && window.QamarRoomVoice.updateMuteState) {
-                    try { window.QamarRoomVoice.updateMuteState(State.myUid, State.muted); } catch (e) {}
-                }
-                return { ok: true };
-            })
-            .catch(function (e) {
-                Logger.error('connect failed:', e.message);
-                _emit('voice:error', { error: e.message });
-                throw e;
-            });
+            _emit('voice:connected', { roomId: roomId, slot: State.mySlot });
+            if (window.QamarRoomVoice && window.QamarRoomVoice.updateMuteState) {
+                try { window.QamarRoomVoice.updateMuteState(State.myUid, State.muted); } catch (e) {}
+            }
+            return { ok: true };
+        }).catch(function (e) {
+            Logger.error('connect failed:', e.message);
+            _emit('voice:error', { error: e.message });
+            throw e;
+        });
     }
 
     function disconnect() {
@@ -552,14 +487,11 @@
         _removeAllPeers();
 
         if (State.localStream) {
-            try {
-                State.localStream.getTracks().forEach(function (t) { t.stop(); });
-            } catch (e) {}
+            try { State.localStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
             State.localStream = null;
         }
 
         if (State.myUid && State.roomId) {
-            // احذف إشاراتي المعلقة
             window.QamarFB.remove(_signalsPath(State.roomId, State.myUid)).catch(function () {});
         }
 
@@ -567,6 +499,8 @@
         State.roomId = null;
         State.mySlot = -1;
         State.myUid = null;
+        State.speakersData = {};
+        State.participantsData = {};
 
         _emit('voice:disconnected', {});
         Logger.info('🎙️ Voice disconnected');
@@ -576,11 +510,8 @@
     function mute(muted) {
         State.muted = !!muted;
         if (State.localStream) {
-            State.localStream.getAudioTracks().forEach(function (t) {
-                t.enabled = !muted;
-            });
+            State.localStream.getAudioTracks().forEach(function (t) { t.enabled = !muted; });
         }
-        // أبلغ room-voice
         if (window.QamarRoomVoice && window.QamarRoomVoice.updateMuteState && State.myUid) {
             try { window.QamarRoomVoice.updateMuteState(State.myUid, State.muted); } catch (e) {}
         }
@@ -588,13 +519,8 @@
         return { ok: true, muted: State.muted };
     }
 
-    function toggleMute() {
-        return mute(!State.muted);
-    }
+    function toggleMute() { return mute(!State.muted); }
 
-    /* ══════════════════════════════════════════════ */
-    /* Personal mutes (من room-voice)                  */
-    /* ══════════════════════════════════════════════ */
     function applyMutes(personalMutes, personalMutedAll) {
         State.personalMutes = personalMutes || {};
         State.personalMutedAll = !!personalMutedAll;
@@ -623,12 +549,14 @@
             mySlot: State.mySlot,
             myUid: State.myUid ? State.myUid.substring(0, 8) : null,
             peers: Object.keys(State.peers).length,
+            remoteAudios: Object.keys(State.remoteAudios).length,
             muted: State.muted,
             speaking: State.isSpeaking,
             hasStream: !!State.localStream,
             hasAudioContext: !!State.audioContext,
             personalMutes: Object.keys(State.personalMutes).length,
-            personalMutedAll: State.personalMutedAll
+            personalMutedAll: State.personalMutedAll,
+            hasSpeakersCallback: typeof State.onSpeakersChange === 'function'
         };
     }
 
@@ -639,16 +567,12 @@
         if (State._initialized) return;
         State._initialized = true;
 
-        // عند تسجيل الخروج → افصل
         if (window.QamarAuth && window.QamarAuth.onAuthChange) {
             window.QamarAuth.onAuthChange(function (p) {
-                if (!p.isLoggedIn && State.connected) {
-                    disconnect();
-                }
+                if (!p.isLoggedIn && State.connected) disconnect();
             });
         }
 
-        // عند تغيير الغرفة → افصل
         if (window.EventBus) {
             window.EventBus.on('room:changed', function () {
                 if (State.connected) disconnect();
@@ -659,11 +583,46 @@
     }
 
     if (window.EventBus) {
-        window.EventBus.once('boot:ready', function () {
-            setTimeout(_init, 2600);
-        });
+        window.EventBus.once('boot:ready', function () { setTimeout(_init, 2600); });
     } else {
         setTimeout(_init, 8000);
+    }
+
+    /* ══════════════════════════════════════════════ */
+    /* ⭐ v2.2: Hooks for voice-monitor                */
+    /* ══════════════════════════════════════════════ */
+    function _registerSpeakersCallback(cb) {
+        State.onSpeakersChange = (typeof cb === 'function') ? cb : null;
+        Logger.info('📡 voice-monitor callback registered:', !!State.onSpeakersChange);
+        // إن كانت هناك بيانات جاهزة، أرسلها فوراً
+        if (State.onSpeakersChange && Object.keys(State.speakersData).length > 0) {
+            try { State.onSpeakersChange(State.speakersData); } catch (e) {}
+        }
+    }
+
+    function _unregisterSpeakersCallback() {
+        State.onSpeakersChange = null;
+    }
+
+    function _getMicStream() {
+        return State.localStream || null;
+    }
+
+    function _getRemoteAudios() {
+        return State.remoteAudios || {};
+    }
+
+    function _getSpeakersData() {
+        return State.speakersData || {};
+    }
+
+    function _getParticipantsData() {
+        return State.participantsData || {};
+    }
+
+    // يستدعى من room-voice عند تحديث participants
+    function _setParticipantsData(data) {
+        State.participantsData = data || {};
     }
 
     /* ══════════════════════════════════════════════ */
@@ -672,7 +631,7 @@
     window.QamarVoiceSystem = {
         CONFIG: CONFIG,
 
-        // Lifecycle (يستدعيها room-voice)
+        // Lifecycle
         connect: connect,
         disconnect: disconnect,
         mute: mute,
@@ -690,9 +649,21 @@
         // Events
         onVoiceSystemEvent: onVoiceSystemEvent,
 
+        // ⭐ v2.2: Hooks for voice-monitor
+        _registerSpeakersCallback: _registerSpeakersCallback,
+        _unregisterSpeakersCallback: _unregisterSpeakersCallback,
+        _getMicStream: _getMicStream,
+        _getRemoteAudios: _getRemoteAudios,
+        _getSpeakersData: _getSpeakersData,
+        _getParticipantsData: _getParticipantsData,
+        _setParticipantsData: _setParticipantsData,
+
         // Debug
         getStatus: getStatus
     };
 
-    Logger.info('📦 [voice-system.js] loaded');
+    // Aliases قديمة (توافق مع النسخة السابقة)
+    window.VoiceSystem = window.QamarVoiceSystem;
+
+    Logger.info('📦 [voice-system.js] v2.2 loaded | monitor hooks exported');
 })();
