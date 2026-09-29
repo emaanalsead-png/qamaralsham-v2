@@ -1,12 +1,12 @@
 /* ============================================================
    🌙 قمر الشام — effects/frames-engine.js
-   Version: 1.0
+   Version: 1.1 — safe DOM manipulation
    ============================================================ */
 (function () {
   'use strict';
   if (window.QamarFrames) return;
 
-  var VERSION = '1.0';
+  var VERSION = '1.1';
 
   var FRAMES = {
     gold:    { name: 'ذهبي',   colors: ['#d4af37', '#ffd700', '#b8860b'], anim: true },
@@ -60,61 +60,126 @@
     return 'linear-gradient(' + (angle || 45) + 'deg, ' + stops + ')';
   }
 
+  /* ⭐ v1.1: دالة آمنة */
   function applyToImg(imgEl, frameName) {
-    if (!imgEl) return;
+    if (!imgEl || !imgEl.parentNode) return;
+
     var frame = getFrame(frameName);
     if (!frame) { clearFromImg(imgEl); return; }
 
-    injectStyle();
-
-    var wrap = imgEl.parentNode;
-    if (!wrap || !wrap.classList || !wrap.classList.contains('qf-wrap')) {
-      wrap = document.createElement('span');
-      wrap.className = 'qf-wrap';
-      imgEl.parentNode.insertBefore(wrap, imgEl);
-      wrap.appendChild(imgEl);
-    }
-
-    var old = wrap.querySelectorAll('.qf-frame, .qf-frame-spin');
-    for (var i = 0; i < old.length; i++) old[i].remove();
-
-    var frameEl = document.createElement('span');
-    frameEl.className = 'qf-frame';
-    frameEl.style.background = makeGradient(frame.colors, 45);
-
-    var innerMask = document.createElement('span');
-    innerMask.style.cssText =
-      'position:absolute;inset:3px;border-radius:50%;' +
-      'background:transparent;box-shadow:0 0 12px rgba(0,0,0,.9) inset';
-    frameEl.appendChild(innerMask);
-
-    if (frame.anim) {
-      frameEl.classList.add('qf-anim-move');
-      var spin = document.createElement('span');
-      spin.className = 'qf-frame-spin qf-anim-pulse';
-      spin.style.background = makeGradient(frame.colors, 135);
-      spin.style.filter = 'blur(6px)';
-      wrap.insertBefore(spin, frameEl);
-    }
-
-    wrap.appendChild(frameEl);
+    try { injectStyle(); } catch (e) { return; }
 
     try {
-      if (imgEl.style) imgEl.style.borderRadius = '50%';
-    } catch (e) {}
+      // 1) احصل على parent الحالي
+      var parent = imgEl.parentNode;
+      if (!parent || !parent.contains(imgEl)) return;
+
+      // 2) ابحث إذا كان مغلفاً بالفعل
+      var wrap = null;
+      if (imgEl.parentNode && imgEl.parentNode.classList &&
+          imgEl.parentNode.classList.contains('qf-wrap')) {
+        wrap = imgEl.parentNode;
+      } else {
+        // 3) أنشئ wrapper جديد بأمان
+        wrap = document.createElement('span');
+        wrap.className = 'qf-wrap';
+
+        // ⭐ التحقق قبل insertBefore
+        if (!parent.contains(imgEl)) return;
+        try {
+          parent.insertBefore(wrap, imgEl);
+        } catch (e) {
+          console.warn('[frames] insertBefore failed:', e.message);
+          return;
+        }
+
+        // ⭐ التحقق مرة أخرى قبل appendChild
+        try {
+          if (parent.contains(imgEl)) wrap.appendChild(imgEl);
+          else if (imgEl.parentNode !== wrap) imgEl.parentNode.appendChild(imgEl);
+        } catch (e) {
+          console.warn('[frames] appendChild failed:', e.message);
+          return;
+        }
+      }
+
+      if (!wrap) return;
+
+      // 4) احذف الإطارات القديمة بأمان
+      try {
+        var old = wrap.querySelectorAll('.qf-frame, .qf-frame-spin');
+        for (var i = 0; i < old.length; i++) {
+          try { old[i].remove(); } catch (e) {}
+        }
+      } catch (e) {}
+
+      // 5) ابنِ الإطار الجديد
+      var frameEl = document.createElement('span');
+      frameEl.className = 'qf-frame';
+      frameEl.style.background = makeGradient(frame.colors, 45);
+
+      var innerMask = document.createElement('span');
+      innerMask.style.cssText =
+        'position:absolute;inset:3px;border-radius:50%;' +
+        'background:transparent;box-shadow:0 0 12px rgba(0,0,0,.9) inset';
+      frameEl.appendChild(innerMask);
+
+      // 6) spin (إن كان متحركاً)
+      var spin = null;
+      if (frame.anim) {
+        frameEl.classList.add('qf-anim-move');
+        spin = document.createElement('span');
+        spin.className = 'qf-frame-spin qf-anim-pulse';
+        spin.style.background = makeGradient(frame.colors, 135);
+        spin.style.filter = 'blur(6px)';
+      }
+
+      // 7) أضف الإطار للـ wrapper بأمان
+      try {
+        if (spin) wrap.appendChild(spin);
+        wrap.appendChild(frameEl);
+      } catch (e) {
+        console.warn('[frames] append frame failed:', e.message);
+      }
+
+      // 8) دائرة
+      try {
+        if (imgEl.style) imgEl.style.borderRadius = '50%';
+      } catch (e) {}
+
+    } catch (err) {
+      console.warn('[frames] applyToImg error:', err && err.message);
+    }
   }
 
+  /* ⭐ v1.1: دالة آمنة */
   function clearFromImg(imgEl) {
     if (!imgEl) return;
-    var wrap = imgEl.parentNode;
-    if (wrap && wrap.classList && wrap.classList.contains('qf-wrap')) {
-      var children = wrap.querySelectorAll('.qf-frame, .qf-frame-spin');
-      for (var i = 0; i < children.length; i++) children[i].remove();
+    try {
+      var wrap = imgEl.parentNode;
+      if (!wrap || !wrap.classList || !wrap.classList.contains('qf-wrap')) return;
+
+      // احذف الإطارات
+      try {
+        var children = wrap.querySelectorAll('.qf-frame, .qf-frame-spin');
+        for (var i = 0; i < children.length; i++) {
+          try { children[i].remove(); } catch (e) {}
+        }
+      } catch (e) {}
+
+      // أعد img خارج wrap
       var parent = wrap.parentNode;
-      if (parent) {
-        parent.insertBefore(imgEl, wrap);
-        try { wrap.remove(); } catch (e) {}
+      if (parent && parent.contains(wrap)) {
+        try {
+          parent.insertBefore(imgEl, wrap);
+          wrap.remove();
+        } catch (e) {
+          // fallback
+          try { wrap.remove(); } catch (e2) {}
+        }
       }
+    } catch (e) {
+      console.warn('[frames] clear error:', e && e.message);
     }
   }
 
@@ -155,20 +220,24 @@
   }
 
   function applyAll(root) {
-    root = root || document;
-    var nodes = root.querySelectorAll('[data-qf]');
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
-      var frameName = el.getAttribute('data-qf');
-      if (el.tagName === 'IMG') applyToImg(el, frameName);
+    try {
+      root = root || document;
+      var nodes = root.querySelectorAll('[data-qf]');
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        var frameName = el.getAttribute('data-qf');
+        if (el.tagName === 'IMG') applyToImg(el, frameName);
+      }
+    } catch (e) {
+      console.warn('[frames] applyAll error:', e && e.message);
     }
   }
 
   function init() {
     if (St.inited) return;
     St.inited = true;
-    injectStyle();
-    applyAll();
+    try { injectStyle(); } catch (e) {}
+    try { applyAll(); } catch (e) {}
     try {
       if (window.EventBus && window.EventBus.on) {
         window.EventBus.on('frame:apply', function (d) {
