@@ -1,24 +1,20 @@
 // ==============================================
-// firebase/firebase.js
+// firebase/firebase.js v2.1
 // Unified wrapper around Realtime DB + Storage
 // ==============================================
 // يعتمد على: core/config.js (يوفر db, storage)
 // يعطي: window.QamarFB
 // ==============================================
+// ⭐ v2.1: multiUpdate يطبع المسارات الفاشلة عند permission_denied
+// ==============================================
 
 (function () {
     'use strict';
 
-    /* ══════════════════════════════════════════════ */
-    /* Config                                          */
-    /* ══════════════════════════════════════════════ */
-    const DEFAULT_TIMEOUT = 15000;   // 15s لعملية قراءة
-    const WRITE_TIMEOUT   = 20000;   // 20s لعملية كتابة
+    const DEFAULT_TIMEOUT = 15000;
+    const WRITE_TIMEOUT   = 20000;
     const LOG_TAG         = '[FB]';
 
-    /* ══════════════════════════════════════════════ */
-    /* Logger مختصر                                   */
-    /* ══════════════════════════════════════════════ */
     const Logger = {
         debug: function () {
             if (window.QAMAR_DEBUG) console.log.apply(console, [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
@@ -29,7 +25,7 @@
     };
 
     /* ══════════════════════════════════════════════ */
-    /* Sanitizers                                     */
+    /* Sanitizers                                      */
     /* ══════════════════════════════════════════════ */
 
     function escapeKey(key) {
@@ -75,9 +71,6 @@
             .join('/');
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Path helpers                                    */
-    /* ══════════════════════════════════════════════ */
     const Paths = {
         user: function (uid) { return buildPath('users', uid); },
         userField: function (uid, field) { return buildPath('users', uid, field); },
@@ -105,9 +98,6 @@
         botMemory: function (key) { return buildPath('bot_memory', key); }
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* Core readiness                                  */
-    /* ══════════════════════════════════════════════ */
     function _getDb() {
         if (!window.db) {
             throw new Error('Firebase DB not initialized. Wait for waitForFirebase()');
@@ -137,9 +127,6 @@
         return Promise.reject(new Error('waitForFirebase not available'));
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Timeout helper                                  */
-    /* ══════════════════════════════════════════════ */
     function _withTimeout(promise, ms, label) {
         let timer = null;
         const timeout = new Promise(function (_, reject) {
@@ -153,9 +140,6 @@
         );
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Path validation                                 */
-    /* ══════════════════════════════════════════════ */
     function _validatePath(path) {
         if (!path || typeof path !== 'string') {
             throw new Error('Invalid path: ' + path);
@@ -168,9 +152,6 @@
         }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Refs                                            */
-    /* ══════════════════════════════════════════════ */
     function ref(path) {
         _validatePath(path);
         return _getDb().ref(path);
@@ -296,16 +277,42 @@
         );
     }
 
+    /* ⭐ v2.1: multiUpdate مع تشخيص المسارات الفاشلة */
     function multiUpdate(updates, timeoutMs) {
         if (!updates || typeof updates !== 'object') {
             return Promise.reject(new Error('multiUpdate: invalid updates'));
         }
+        const keys = Object.keys(updates);
         const rootRef = _getDb().ref();
         return _withTimeout(
             rootRef.update(updates),
             timeoutMs || WRITE_TIMEOUT,
             'multiUpdate'
-        );
+        ).catch(function (err) {
+            const msg = (err && err.message) || '';
+            // ⭐ إذا permission_denied → سجّل المسارات
+            if (msg.indexOf('permission') !== -1 || msg.indexOf('PERMISSION') !== -1) {
+                const shortKeys = keys.map(function (k) {
+                    const parts = k.split('/');
+                    return parts.slice(0, 2).join('/') + (parts.length > 2 ? '/…' : '');
+                });
+                // مسارات فريدة فقط
+                const uniq = [];
+                shortKeys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
+                Logger.error('❌ multiUpdate DENIED | paths: ' + uniq.join(', '));
+                // أطلق حدث للتشخيص
+                try {
+                    if (window.EventBus && window.EventBus.emit) {
+                        window.EventBus.emit('firebase:multiUpdateDenied', {
+                            paths: keys,
+                            shortPaths: uniq,
+                            error: msg
+                        });
+                    }
+                } catch (e) {}
+            }
+            throw err;
+        });
     }
 
     function transaction(path, fn, timeoutMs) {
@@ -402,14 +409,10 @@
         };
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Server time                                     */
-    /* ══════════════════════════════════════════════ */
     function serverTime() {
         return firebase.database.ServerValue.TIMESTAMP;
     }
 
-    // ⭐ FIXED: TDZ bug — Firebase fires callback synchronously for .info paths
     function serverOffset(path) {
         path = path || '.info/serverTimeOffset';
         return new Promise(function (resolve) {
@@ -432,14 +435,10 @@
 
             r.on('value', handler);
 
-            // timeout احتياطي
             setTimeout(function () { finish(0); }, 3000);
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Connection monitor                              */
-    /* ══════════════════════════════════════════════ */
     function onConnectionChange(cb) {
         const r = _getDb().ref('.info/connected');
         const handler = r.on('value', function (snap) {
@@ -451,10 +450,6 @@
         };
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Batch helpers                                   */
-    /* ══════════════════════════════════════════════ */
-
     function removeMany(paths, timeoutMs) {
         const updates = {};
         (paths || []).forEach(function (p) { updates[p] = null; });
@@ -465,43 +460,28 @@
         return multiUpdate(map, timeoutMs);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Exports                                         */
-    /* ══════════════════════════════════════════════ */
     const QamarFB = {
-
-        // Readiness
         isReady: isReady,
         waitReady: waitReady,
-
-        // Refs
         ref: ref,
         storageRef: storageRef,
-
-        // Read
         get: get,
         exists: exists,
         children: children,
         getLatest: getLatest,
         query: query,
-
-        // Write
         set: set,
         update: update,
         push: push,
         remove: remove,
         multiUpdate: multiUpdate,
         transaction: transaction,
-
-        // Listen
         onValue: onValue,
         onChildAdded: onChildAdded,
         onChildChanged: onChildChanged,
         onChildRemoved: onChildRemoved,
         onLatest: onLatest,
         onConnectionChange: onConnectionChange,
-
-        // Utilities
         serverTime: serverTime,
         serverOffset: serverOffset,
         escapeKey: escapeKey,
@@ -510,15 +490,11 @@
         buildPath: buildPath,
         removeMany: removeMany,
         setMany: setMany,
-
-        // Path helpers
         Paths: Paths,
-
-        // Logger
         Logger: Logger
     };
 
     window.QamarFB = QamarFB;
 
-    Logger.info('📦 [firebase.js] loaded');
+    Logger.info('📦 [firebase.js v2.1] loaded — multiUpdate diagnostics');
 })();
