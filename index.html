@@ -69,7 +69,6 @@
             <button class="ls-tab" data-ls-tab="register" type="button">✨ تسجيل</button>
         </div>
 
-        <!-- Guest -->
         <div class="ls-panel active" data-ls-panel="guest">
             <p class="ls-hint">ادخل كزائر — بدون بريد، بدون كلمة مرور. تستطيع الكتابة في الروم العام، لكن لا يمكنك الخاص أو الرفع.</p>
             <button id="ls-guest-btn" class="ls-btn ls-btn-primary" type="button">
@@ -77,7 +76,6 @@
             </button>
         </div>
 
-        <!-- Member -->
         <div class="ls-panel" data-ls-panel="member">
             <div class="ls-field">
                 <label for="ls-email">البريد الإلكتروني</label>
@@ -93,7 +91,6 @@
             <button id="ls-forgot-btn" class="ls-btn ls-btn-link" type="button">نسيت كلمة المرور؟</button>
         </div>
 
-        <!-- Register -->
         <div class="ls-panel" data-ls-panel="register">
             <div class="ls-field">
                 <label for="ls-reg-email">البريد الإلكتروني</label>
@@ -126,7 +123,6 @@
 <!-- ══════════════════════════════════════════════ -->
 <div id="main-app" class="main-app hidden">
 
-    <!-- Header -->
     <header id="chat-header" class="chat-header">
         <button id="menu-btn" class="header-btn" type="button" aria-label="القائمة">
             <i class="fas fa-bars"></i>
@@ -153,30 +149,23 @@
         </div>
     </header>
 
-    <!-- Room Alert (banner) -->
     <div id="room-alert" class="room-alert hidden">
         <span id="room-alert-text"></span>
         <button id="room-alert-close" type="button">✕</button>
     </div>
 
-    <!-- Voice Bar (slots) -->
     <div id="voice-bar" class="voice-bar hidden"></div>
 
-    <!-- Messages Container -->
     <div id="chat-area" class="chat-area">
         <div id="messages-container" class="messages-container"></div>
     </div>
 
-    <!-- Input Area -->
     <div id="input-area" class="input-area">
 
-        <!-- Reply Preview -->
         <div id="reply-preview" class="reply-preview" style="display:none;"></div>
 
-        <!-- Char Counter -->
         <div id="char-counter" class="char-counter" style="display:none;">0</div>
 
-        <!-- Actions Row -->
         <div class="input-row">
             <button id="plus-btn" class="input-action-btn" type="button" aria-label="أدوات">
                 <i class="fas fa-plus"></i>
@@ -204,7 +193,6 @@
 
     </div>
 
-    <!-- Bottom Nav -->
     <nav id="bottom-nav" class="bottom-nav">
         <button class="nav-btn active" data-nav="chat" type="button">
             <i class="fas fa-comments"></i><span>الشات</span>
@@ -230,7 +218,6 @@
 <!-- ══════════════════════════════════════════════ -->
 <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 
-<!-- Rooms Sidebar -->
 <aside id="sidebar-rooms" class="sidebar sidebar-right" data-sidebar="rooms">
     <div class="sidebar-header">
         <h3>🚪 الغرف</h3>
@@ -239,7 +226,6 @@
     <div id="rooms-list" class="sidebar-body"></div>
 </aside>
 
-<!-- Notifications Sidebar -->
 <aside id="sidebar-notifications" class="sidebar sidebar-right" data-sidebar="notifications">
     <div class="sidebar-header">
         <h3>🔔 التنبيهات</h3>
@@ -248,7 +234,6 @@
     <div id="notifications-list" class="sidebar-body"></div>
 </aside>
 
-<!-- PM Sidebar -->
 <aside id="sidebar-pm" class="sidebar sidebar-right" data-sidebar="pm">
     <div class="sidebar-header">
         <h3>💬 المحادثات</h3>
@@ -257,7 +242,6 @@
     <div id="pm-chats-list" class="sidebar-body"></div>
 </aside>
 
-<!-- Settings Sidebar -->
 <aside id="sidebar-settings" class="sidebar sidebar-right" data-sidebar="settings">
     <div class="sidebar-header">
         <h3>⚙️ الإعدادات</h3>
@@ -304,7 +288,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Upgrade Modal (guest → member)          ═══ -->
+<!-- ═══ Upgrade Modal                           ═══ -->
 <!-- ══════════════════════════════════════════════ -->
 <div id="upgrade-modal" class="modal hidden">
     <div class="modal-card upgrade-card">
@@ -319,7 +303,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Profile Frame Container (iframe)        ═══ -->
+<!-- ═══ Profile Frame Container                  ═══ -->
 <!-- ══════════════════════════════════════════════ -->
 <div id="profile-frame-container" class="profile-frame-container hidden">
     <div class="pfc-backdrop"></div>
@@ -330,7 +314,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════ -->
-<!-- ═══ Scripts — ordered by dependency         ═══ -->
+<!-- ═══ Scripts                                 ═══ -->
 <!-- ══════════════════════════════════════════════ -->
 
 <!-- ─── Stage 0: CORE ─── -->
@@ -397,7 +381,10 @@
 <!-- ─── Stage 9.5: UI FLOW ─── -->
 <script defer src="ui/login-flow.js"></script>
 
-<!-- ─── Stage 10: OPTIONAL (onerror = silent) ─── -->
+<!-- ─── Stage 9.6: NAVIGATION ─── -->
+<script defer src="ui/nav.js"></script>
+
+<!-- ─── Stage 10: OPTIONAL ─── -->
 <script defer src="room-picker.js" data-optional="true" onerror="void 0"></script>
 
 <script defer src="stories/stories.js" data-optional="true" onerror="void 0"></script>
@@ -428,10 +415,10 @@
 <script defer src="misc/painter.js" data-optional="true" onerror="void 0"></script>
 <script defer src="misc/text-styler.js" data-optional="true" onerror="void 0"></script>
 
-<!-- ─── Stage 10.5: DEBUG (إلزامي) ─── -->
+<!-- ─── Stage 10.5: DEBUG ─── -->
 <script defer src="debug/debug-panel.js"></script>
 
-<!-- ─── Stage 11: BOOT (آخر شيء) ─── -->
+<!-- ─── Stage 11: BOOT ─── -->
 <script defer src="core/boot.js"></script>
 
 </body>
