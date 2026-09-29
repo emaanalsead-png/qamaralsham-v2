@@ -1,11 +1,11 @@
 // ==============================================
-// ui/nav.js v2.1 — profile modal support
+// ui/nav.js v2.2 — profile iframe support
 // Bottom Nav + Sidebars + Header buttons
 // ==============================================
-// يعتمد على: rooms.js + pm.js + auth.js + session.js + EventBus + profile.js
+// يعتمد على: rooms.js + pm.js + auth.js + session.js + EventBus
 // يعطي: window.QamarNav
 // ==============================================
-// ⭐ v2.1: openProfile يستخدم QamarProfile (modal) بدل iframe
+// ⭐ v2.2: openProfile يستخدم profile/profile.html في iframe
 // ==============================================
 
 (function () {
@@ -570,7 +570,6 @@
                 } else if (nav === 'pm') {
                     openSidebar('pm');
                 } else if (nav === 'profile') {
-                    // ⭐ v2.1: يفتح modal البروفايل مباشرة
                     const uid = _getCurrentUid();
                     if (uid) {
                         openProfile(uid, _getCurrentUser().name || '');
@@ -712,7 +711,6 @@
             if (p && p.otherUid) _openPM(p.otherUid);
         });
 
-        // ⭐ v2.1: فتح البروفايل من أي مكان
         window.EventBus.on('profile:open', function (p) {
             if (p && p.uid) openProfile(p.uid);
         });
@@ -785,7 +783,7 @@
         }
 
         State._initialized = true;
-        Logger.info('📦 [nav.js v2.1] initialized');
+        Logger.info('📦 [nav.js v2.2] initialized');
         return true;
     }
 
@@ -802,33 +800,22 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* openProfile — ⭐ v2.1: يستخدم QamarProfile      */
+    /* openProfile — ⭐ v2.2: يستخدم iframe profile/  */
     /* ══════════════════════════════════════════════ */
     function openProfile(uid, name) {
-        // ⭐ Modal مباشر (الأفضل)
-        if (window.QamarProfile && typeof window.QamarProfile.open === 'function') {
-            try {
-                window.QamarProfile.open(uid || _getCurrentUid());
-                return;
-            } catch (e) {
-                Logger.warn('QamarProfile.open failed:', e.message);
+        if (!uid) uid = _getCurrentUid();
+        if (!uid) { _toast('البروفايل غير متاح'); return; }
+
+        var f = _byId('profile-frame-container');
+        var i = _byId('profile-iframe');
+        if (i && f) {
+            i.src = 'profile/profile.html?uid=' + encodeURIComponent(uid) + '&t=' + Date.now();
+            f.classList.remove('hidden');
+            var close = _byId('pfc-close');
+            if (close) {
+                close.onclick = function () { f.classList.add('hidden'); };
             }
-        }
-        // fallback: iframe القديم (يحتاج profile.html — غير موجود)
-        try {
-            localStorage.setItem('profile_target_uid', uid);
-            localStorage.setItem('profile_target_name', name || '');
-            const f = _byId('profile-frame-container');
-            const i = _byId('profile-iframe');
-            if (i && f) {
-                i.src = 'profile.html?uid=' + encodeURIComponent(uid) + '&t=' + Date.now();
-                f.classList.remove('hidden');
-                const close = _byId('pfc-close');
-                if (close) close.onclick = function () { f.classList.add('hidden'); };
-            } else {
-                _toast('البروفايل غير متاح بعد');
-            }
-        } catch (e) {
+        } else {
             _toast('البروفايل غير متاح');
         }
     }
@@ -852,12 +839,11 @@
                 hasBottomNav: !!State.els.bottomNav,
                 hasSidebars: !!(State.els.sidebarRooms && State.els.sidebarNotif && State.els.sidebarPM && State.els.sidebarSettings),
                 hasPMModal: !!State.els.pmModal,
-                hasProfileModule: !!(window.QamarProfile),
                 isKing: _isKing(),
                 isGuest: _isGuest()
             };
         }
     };
 
-    Logger.info('📦 [nav.js v2.1] loaded — profile modal ready');
+    Logger.info('📦 [nav.js v2.2] loaded — profile iframe ready');
 })();
