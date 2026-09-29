@@ -1,18 +1,8 @@
 // ==============================================
-// debug/debug-panel.js
+// debug/debug-panel.js v1.1
 // Mobile-friendly debug panel — no console needed
 // ==============================================
-// يعتمد على: (لا شيء — يعمل من أول لحظة)
-// يعطي: window.QamarDebug
-// ==============================================
-// ⭐ التقاط شامل:
-//   1. console.error / console.warn
-//   2. window.onerror
-//   3. unhandledrejection
-//   4. حالة كل Qamar* module (loaded / missing)
-//   5. حالة Firebase + Boot + Net
-//   6. زر نسخ / مسح / إخفاء
-//   7. فتح بـ: 5 نقرات على اللوجو، أو ?debug=1، أو QamarDebug.open()
+// ✅ v1.1: throttle spam — لا تُظهر نفس الرسالة أكثر من 3 مرات
 // ==============================================
 
 (function () {
@@ -22,58 +12,37 @@
 
     const LOG_TAG = '[DBG]';
     const MAX_ENTRIES = 60;
+    const SPAM_THRESHOLD = 3;          // نفس الرسالة أكثر من 3 → احذف الباقي
+    const SPAM_WINDOW_MS = 5000;        // خلال 5 ثواني
 
-    /* ══════════════════════════════════════════════ */
-    /* Config                                          */
-    /* ══════════════════════════════════════════════ */
     const CONFIG = {
-        VERSION: '1.0.0',
-        // فتح تلقائي إذا URL فيه ?debug=1
+        VERSION: '1.1.0',
         AUTO_OPEN_URL_PARAM: 'debug',
-        // عدد النقرات المتتالية على 🐛 أو اللوجو لفتح البانل
         TAP_THRESHOLD: 5,
         TAP_WINDOW_MS: 3000,
-        // نسخ تلقائي عند فتح مع أخطاء حرجة؟ لا.
         SHOW_BOOT_INFO: true,
         SHOW_MODULE_STATUS: true,
         SHOW_NET_STATUS: true
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* قائمة كل الوحدات التي يجب أن تُحمَّل           */
-    /* ══════════════════════════════════════════════ */
     const MODULE_LIST = [
-        // Core
         'QamarFB', 'QamarResilience', 'QamarOpt', 'QamarCleaners',
         'QamarNet', 'QamarAdaptive',
-        // Auth
         'QamarAuth', 'QamarSession', 'QamarIdentity', 'QamarRanks',
-        // Security
-        'QamarAudit', 'QamarDeviceGuard', 'QamarBans',
-        'QamarReports', 'QamarSuspects',
-        // Chat
-        'QamarChat', 'QamarChatUI', 'QamarChatInput',
-        'QamarChatEffects', 'QamarNameEffects',
-        // Rooms
+        'QamarAudit', 'QamarDeviceGuard', 'QamarBans', 'QamarReports', 'QamarSuspects',
+        'QamarChat', 'QamarChatUI', 'QamarChatInput', 'QamarChatEffects', 'QamarNameEffects',
         'QamarRooms', 'QamarRoomVoice', 'QamarRoomSettings',
-        // PM
-        'QamarPM', 'QamarPMVoice', 'QamarPMMonitor',
-        'QamarPMArchiver', 'QamarGuardianQueue',
-        // Voice
+        'QamarPM', 'QamarPMVoice', 'QamarPMMonitor', 'QamarPMArchiver', 'QamarGuardianQueue',
         'QamarVoiceSystem', 'QamarVoiceStudio', 'QamarVoiceMonitor',
-        // Bots
         'QamarBots', 'QamarBotCommands', 'QamarBotTraining', 'QamarGuardianInbox',
-        // King
         'QamarKingActions', 'QamarKingQueens', 'QamarKingRoom',
-        // Boot
-        'QamarBoot'
+        'QamarLoginFlow',
+        'QamarDebug', 'QamarBoot'
     ];
 
-    /* ══════════════════════════════════════════════ */
-    /* State                                           */
-    /* ══════════════════════════════════════════════ */
     const State = {
-        entries: [],       // { type, at, text, detail }
+        entries: [],
+        suppressed: {},      // { hash: { count, firstAt } }
         panelEl: null,
         bodyEl: null,
         fabEl: null,
@@ -86,9 +55,6 @@
         _warnsCount: 0
     };
 
-    /* ══════════════════════════════════════════════ */
-    /* Helpers                                         */
-    /* ══════════════════════════════════════════════ */
     function _ts() {
         const d = new Date();
         return String(d.getHours()).padStart(2, '0') + ':' +
@@ -111,12 +77,37 @@
         return Math.floor(m / 60) + 'س';
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Log capture                                     */
-    /* ══════════════════════════════════════════════ */
+    function _hashText(s) {
+        let h = 5381;
+        const str = String(s || '').substring(0, 200);
+        for (let i = 0; i < str.length; i++) {
+            h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+        }
+        return h.toString(36);
+    }
+
+    // ⭐ v1.1: فلترة spam
+    function _isSpam(type, text) {
+        const key = type + '::' + _hashText(text);
+        const now = Date.now();
+        const prev = State.suppressed[key];
+
+        if (prev && (now - prev.firstAt) < SPAM_WINDOW_MS) {
+            prev.count++;
+            if (prev.count > SPAM_THRESHOLD) {
+                return true;  // تجاهل
+            }
+        } else {
+            State.suppressed[key] = { count: 1, firstAt: now };
+        }
+        return false;
+    }
+
     function _addEntry(type, text, detail) {
+        if (_isSpam(type, text)) return;
+
         const entry = {
-            type: type,        // 'error' | 'warn' | 'info' | 'success'
+            type: type,
             at: Date.now(),
             text: String(text || '').substring(0, 500),
             detail: detail ? String(detail).substring(0, 800) : ''
@@ -155,21 +146,16 @@
         const origLog = console.log;
 
         console.error = function () {
-            try {
-                _addEntry('error', _stringify(arguments));
-            } catch (e) {}
+            try { _addEntry('error', _stringify(arguments)); } catch (e) {}
             return origError.apply(console, arguments);
         };
 
         console.warn = function () {
-            try {
-                _addEntry('warn', _stringify(arguments));
-            } catch (e) {}
+            try { _addEntry('warn', _stringify(arguments)); } catch (e) {}
             return origWarn.apply(console, arguments);
         };
 
         console.log = function () {
-            // فقط QAMAR_DEBUG=true نسجّل logs
             if (window.QAMAR_DEBUG) {
                 try {
                     const s = _stringify(arguments);
@@ -202,9 +188,6 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Status collectors                               */
-    /* ══════════════════════════════════════════════ */
     function _getModuleStatus() {
         const out = { loaded: [], missing: [] };
         MODULE_LIST.forEach(function (name) {
@@ -272,9 +255,6 @@
         return { profile: '—', score: '—' };
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* FAB (Floating Button)                           */
-    /* ══════════════════════════════════════════════ */
     function _ensureFab() {
         if (State.fabEl && State.fabEl.parentNode) return State.fabEl;
 
@@ -327,17 +307,10 @@
             _open();
             return;
         }
-
-        // فتح بنقرة واحدة على 🐛 (بما أنه صغير)
-        // لكن نُبقي الـ5 نقرات خياراً للحالات الحساسة
-        // نفتح فوراً:
         _open();
         State.tapCount = 0;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Panel UI                                        */
-    /* ══════════════════════════════════════════════ */
     function _buildPanel() {
         if (State.panelEl && State.panelEl.parentNode) return State.panelEl;
 
@@ -350,7 +323,6 @@
             'direction:rtl;font-family:inherit;color:#f3f4f6;' +
             'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);';
 
-        // Head
         const head = document.createElement('div');
         head.style.cssText =
             'padding:12px 14px;' +
@@ -363,8 +335,8 @@
             '<div style="font-size:20px;">🐛</div>' +
             '<div style="flex:1;">' +
                 '<div style="font-size:14px;font-weight:900;color:#c084fc;">Debug Panel</div>' +
-                '<div style="font-size:10px;color:#888;">v' + CONFIG.VERSION + ' · ' +
-                    'نقر سريع على 🐛 للفتح' +
+                '<div style="font-size:10px;color:#888;">v' + CONFIG.VERSION +
+                    ' · spam-filter on' +
                 '</div>' +
             '</div>' +
             '<button id="qd-copy" style="background:#3b82f6;color:#fff;border:none;' +
@@ -378,7 +350,6 @@
                 'cursor:pointer;font-weight:900;">✕</button>';
         ov.appendChild(head);
 
-        // Body
         const body = document.createElement('div');
         body.id = 'qd-body';
         body.style.cssText =
@@ -387,7 +358,6 @@
         ov.appendChild(body);
         State.bodyEl = body;
 
-        // Actions bottom
         const actions = document.createElement('div');
         actions.style.cssText =
             'padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom));' +
@@ -406,7 +376,6 @@
         document.body.appendChild(ov);
         State.panelEl = ov;
 
-        // Events
         ov.querySelector('#qd-close').onclick = _close;
         ov.querySelector('#qd-copy').onclick = _copyAll;
         ov.querySelector('#qd-clear').onclick = _clearAll;
@@ -423,16 +392,12 @@
         return ov;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Render body                                     */
-    /* ══════════════════════════════════════════════ */
     function _renderBody() {
         const body = State.bodyEl;
         if (!body) return;
 
         body.innerHTML = '';
 
-        // 1) Header chips: Boot, FB, Net
         const statuses = document.createElement('div');
         statuses.style.cssText =
             'display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));' +
@@ -479,7 +444,6 @@
 
         body.appendChild(statuses);
 
-        // 2) Modules status
         if (CONFIG.SHOW_MODULE_STATUS) {
             const mods = _getModuleStatus();
             const mWrap = document.createElement('div');
@@ -503,7 +467,6 @@
             body.appendChild(mWrap);
         }
 
-        // 3) Errors list
         const errsWrap = document.createElement('div');
         errsWrap.style.cssText =
             'background:rgba(255,255,255,0.03);' +
@@ -517,7 +480,6 @@
             errsHtml += '<div style="text-align:center;color:#666;font-size:11px;padding:14px;">' +
                 'لا أخطاء — كل شيء جيد ✅</div>';
         } else {
-            // الأحدث أولاً
             State.entries.slice().reverse().forEach(function (e) {
                 const color = e.type === 'error' ? '#ff8888' :
                               e.type === 'warn' ? '#fbbf24' :
@@ -565,9 +527,6 @@
         return c;
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Actions                                         */
-    /* ══════════════════════════════════════════════ */
     function _copyAll() {
         const boot = _getBootStatus();
         const fb = _getFBStatus();
@@ -603,12 +562,10 @@
 
         const text = lines.join('\n');
 
-        // Copy — نجرّب clipboard ثم fallback
         const done = function () {
             _toast('📋 تم النسخ — الصقه في المحادثة');
         };
         const fail = function () {
-            // fallback — أنشئ textarea
             try {
                 const ta = document.createElement('textarea');
                 ta.value = text;
@@ -619,18 +576,7 @@
                 document.body.removeChild(ta);
                 done();
             } catch (e) {
-                _toast('❌ فشل النسخ — جرّب تحديد النص يدوياً');
-                // افتح textarea معروض
-                const ta2 = document.createElement('textarea');
-                ta2.value = text;
-                ta2.style.cssText =
-                    'position:fixed;inset:20px;z-index:10000;' +
-                    'background:#000;color:#fff;border:1px solid #ffd700;' +
-                    'border-radius:8px;padding:10px;font-family:monospace;' +
-                    'font-size:10px;direction:ltr;';
-                document.body.appendChild(ta2);
-                ta2.focus();
-                ta2.select();
+                _toast('❌ فشل النسخ');
             }
         };
 
@@ -643,6 +589,7 @@
 
     function _clearAll() {
         State.entries = [];
+        State.suppressed = {};
         State._errorsCount = 0;
         State._warnsCount = 0;
         _updateFab();
@@ -654,7 +601,6 @@
         if (window.showToast) {
             try { window.showToast('fa-bug', msg); return; } catch (e) {}
         }
-        // toast بسيط
         const t = document.createElement('div');
         t.textContent = msg;
         t.style.cssText =
@@ -670,9 +616,6 @@
         }, 2500);
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Open / Close                                    */
-    /* ══════════════════════════════════════════════ */
     function _open() {
         if (!State.panelEl) _buildPanel();
         State.panelEl.style.display = 'flex';
@@ -695,9 +638,6 @@
         }
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Hooks into Boot / Auth                          */
-    /* ══════════════════════════════════════════════ */
     function _installBusHooks() {
         if (!window.EventBus) return;
 
@@ -718,9 +658,6 @@
         });
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Init                                            */
-    /* ══════════════════════════════════════════════ */
     function _init() {
         if (State._initialized) return;
         State._initialized = true;
@@ -728,18 +665,15 @@
         _installConsoleHooks();
         _installGlobalHooks();
 
-        // FAB بعد تحميل DOM
         setTimeout(function () {
             _ensureFab();
             _installBusHooks();
         }, 500);
 
-        // فتح تلقائي إذا ?debug=1
         if (_shouldAutoOpen()) {
             setTimeout(_open, 800);
         }
 
-        // معلومات بداية
         setTimeout(function () {
             _addEntry('info', 'Debug ready · ' + (navigator.userAgent || '').substring(0, 60));
         }, 200);
@@ -753,9 +687,6 @@
         _init();
     }
 
-    /* ══════════════════════════════════════════════ */
-    /* Exports                                         */
-    /* ══════════════════════════════════════════════ */
     window.QamarDebug = {
         VERSION: CONFIG.VERSION,
         open: _open,
@@ -779,5 +710,5 @@
         }
     };
 
-    try { console.log(LOG_TAG + ' 📦 [debug-panel.js] loaded'); } catch (e) {}
+    try { console.log(LOG_TAG + ' 📦 [debug-panel.js v1.1] loaded'); } catch (e) {}
 })();
