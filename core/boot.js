@@ -4,14 +4,6 @@
 // يعتمد على: كل الملفات (يُحمَّل بعدها)
 // يعطي: window.QamarBoot
 // ==============================================
-// ⭐ v2:
-//   1. 5 مراحل + lazy modules
-//   2. شاشة لودر تُظهر التقدم + تسمح بـ Login مبكراً
-//   3. يستخدم QamarAdaptive.deferHeavyModules
-//   4. whenReady(stage, cb) API نظيف
-//   5. timing حقيقي لكل مرحلة
-//   6. حل مشكلة النت البطيء عند البدء
-// ==============================================
 
 (function () {
     'use strict';
@@ -33,7 +25,6 @@
         MIN_LOADER_MS: 800,
         MAX_WAIT_MS: 20000,
         STAGES: ['core', 'auth', 'chat', 'background', 'ready'],
-        // المدة المتوقعة لكل مرحلة (للتشخيص)
         EXPECTED_MS: {
             core: 1500,
             auth: 800,
@@ -49,10 +40,10 @@
     const State = {
         startedAt: 0,
         currentStage: null,
-        completedStages: {},        // { stageName: timestamp }
-        stageTimings: {},           // { stageName: ms }
-        listeners: {},              // { stage: [cb, ...] }
-        status: 'pending',          // 'pending'|'running'|'ready'|'failed'
+        completedStages: {},
+        stageTimings: {},
+        listeners: {},
+        status: 'pending',
         failureReason: null,
         _resolvedReady: false
     };
@@ -81,7 +72,6 @@
     function _setLoaderProgress(pct) {
         const els = _getLoaderEls();
         if (!els.barTrack || !els.bar) return;
-        // استبدل الـ animation بشريط ثابت
         els.bar.style.animation = 'none';
         els.bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
         els.bar.style.transition = 'width 0.4s ease';
@@ -112,13 +102,11 @@
     function whenReady(stage, cb) {
         if (typeof cb !== 'function') return function () {};
 
-        // المرحلة مكتملة؟ نفّذ فوراً
         if (State.completedStages[stage]) {
             setTimeout(cb, 0);
             return function () {};
         }
 
-        // سجّل الانتظار
         if (!State.listeners[stage]) State.listeners[stage] = [];
         State.listeners[stage].push(cb);
 
@@ -133,12 +121,10 @@
         Logger.info('✅ Stage:', stage,
             '(' + (State.stageTimings[stage] || 0) + 'ms)');
 
-        // Global event
         if (window.EventBus) {
             try { window.EventBus.emit('boot:stage:' + stage, { stage: stage }); } catch (e) {}
         }
 
-        // Local listeners
         const arr = State.listeners[stage];
         if (arr) {
             arr.slice().forEach(function (cb) {
@@ -149,7 +135,6 @@
             State.listeners[stage] = [];
         }
 
-        // اعكس على الـ status
         if (stage === 'ready') {
             if (!State._resolvedReady) {
                 State._resolvedReady = true;
@@ -177,7 +162,6 @@
         } catch (e) {
             Logger.error('Stage ' + stage + ' failed:', e.message || e);
             State.stageTimings[stage] = Date.now() - start;
-            // لا نوقف النظام — نُكمل للمرحلة التالية
             _emitStage(stage);
         }
     }
@@ -188,7 +172,6 @@
     async function _stageCore() {
         _setLoaderProgress(10);
 
-        // 1. Firebase
         if (typeof window.waitForFirebase === 'function') {
             try { await window.waitForFirebase(CONFIG.MAX_WAIT_MS); }
             catch (e) { Logger.warn('waitForFirebase failed:', e.message); }
@@ -197,12 +180,10 @@
         }
         _setLoaderProgress(25);
 
-        // 2. QamarFB (wrapper) — يجب أن يكون جاهزاً تلقائياً
         if (!window.QamarFB) {
             Logger.warn('QamarFB not ready after Firebase init');
         }
 
-        // 3. QamarNet — قد يأخذ ثانية
         if (window.QamarNet && typeof window.QamarNet.measure === 'function') {
             try {
                 await Promise.race([
@@ -213,7 +194,6 @@
         }
         _setLoaderProgress(35);
 
-        // 4. QamarAdaptive — يجب أن يقرأ من QamarNet
         if (window.QamarAdaptive) {
             Logger.debug('Adaptive profile:', window.QamarAdaptive.getProfileName());
         }
@@ -227,19 +207,16 @@
     async function _stageAuth() {
         _setLoaderProgress(45);
 
-        // QamarAuth (موجود مسبقاً — فقط ننتظر waitForAuth)
         if (window.QamarAuth && typeof window.QamarAuth.waitForAuth === 'function') {
             try { await window.QamarAuth.waitForAuth(6000); }
             catch (e) {}
         }
         _setLoaderProgress(55);
 
-        // QamarSession — بدأ تلقائياً
         if (window.QamarSession && typeof window.QamarSession.loadSession === 'function') {
             try { window.QamarSession.loadSession(); } catch (e) {}
         }
 
-        // ✅ Login أصبح متاحاً — أظهر للمستخدم
         _setLoaderStatus('جاهز — يمكنك الدخول الآن', true);
         _setLoaderProgress(60);
     }
@@ -250,7 +227,6 @@
     async function _stageChat() {
         _setLoaderProgress(70);
 
-        // انتظر قليلاً للتأكد أن كل ملفات chat.js حُمّلت
         await _waitForGlobals([
             'QamarChat',
             'QamarChatInput',
@@ -265,7 +241,6 @@
     /* Stage 3 — background                            */
     /* ══════════════════════════════════════════════ */
     async function _stageBackground() {
-        // تأجيل حسب جودة الاتصال
         const deferMs = (window.QamarAdaptive && typeof window.QamarAdaptive.get === 'function')
             ? (window.QamarAdaptive.get('deferHeavyModules') || 0)
             : 2000;
@@ -277,7 +252,6 @@
 
         _setLoaderProgress(90);
 
-        // ننتظر الموديولات الثقيلة (لا نُنفّذها — هي تشتغل تلقائياً)
         await _waitForGlobals([
             'QamarBots',
             'QamarBotCommands',
@@ -294,19 +268,14 @@
     /* ══════════════════════════════════════════════ */
     /* Stage 4 — ready                                 */
     /* ══════════════════════════════════════════════ */
+    // ⭐ FIXED: اخفِ اللودر دائماً (كان ينتظر تسجيل دخول)
     async function _stageReady() {
         _setLoaderProgress(100);
         _setLoaderStatus('جاهز ✨', true);
 
-        // اخفِ اللودر بعد تأخير بسيط (يُخفى فوراً إذا المستخدم سجّل)
         setTimeout(function () {
-            if (window.QamarAuth && typeof window.QamarAuth.isLoggedIn === 'function') {
-                if (window.QamarAuth.isLoggedIn()) {
-                    Logger.debug('User already logged in — hiding loader now');
-                    _hideLoader();
-                }
-            }
-        }, 300);
+            _hideLoader();
+        }, 400);
     }
 
     /* ══════════════════════════════════════════════ */
@@ -353,19 +322,10 @@
         _setLoaderProgress(5);
         _setLoaderStatus('جاري التحميل...', false);
 
-        // Stage 0
         await _runStage('core', _stageCore, 'جاري تهيئة Firebase...');
-
-        // Stage 1
         await _runStage('auth', _stageAuth, 'جاري تجهيز الجلسة...');
-
-        // Stage 2
         await _runStage('chat', _stageChat, 'جاري تهيئة الشات...');
-
-        // Stage 3
         await _runStage('background', _stageBackground, 'جاري تحميل البوتات...');
-
-        // Stage 4
         await _runStage('ready', _stageReady, null);
 
         const total = Date.now() - State.startedAt;
@@ -375,7 +335,6 @@
                 return k + '=' + State.stageTimings[k] + 'ms';
             }).join(', '));
 
-        // احتفظ بمعلومات التشخيص
         try {
             window.__qamarBooted = true;
             window.__qamarBootStatus = 'ready';
@@ -397,7 +356,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* Reset loader (للاستخدام الداخلي)                */
+    /* Reset loader                                    */
     /* ══════════════════════════════════════════════ */
     function hideLoader() {
         _hideLoader();
@@ -426,7 +385,6 @@
     /* Auto-start                                      */
     /* ══════════════════════════════════════════════ */
     function _autoStart() {
-        // ننتظر قليلاً للتأكد أن كل الملفات حُمّلت
         setTimeout(function () {
             run().catch(function (e) {
                 Logger.error('Boot run error:', e);
@@ -446,20 +404,14 @@
     /* ══════════════════════════════════════════════ */
     window.QamarBoot = {
         CONFIG: CONFIG,
-
         run: run,
         fail: fail,
         hideLoader: hideLoader,
-
         whenReady: whenReady,
         getStage: getStage,
-        status: status,
-
-        // Aliases للتوافق مع v1
-        // (كانت تُستخدم كـ waitForAuth في session.js)
+        status: status
     };
 
-    // توافق خلفي مع boot.js v1
     window.QamarBootLite = window.QamarBoot;
 
     Logger.info('📦 [boot.js v2] loaded |', CONFIG.STAGES.length, 'stages');
