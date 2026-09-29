@@ -2,426 +2,433 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌙 قمر الشام v2 — اختبار</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#050508">
+<meta name="description" content="🌙 قمر الشام — منصة دردشة عربية">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<title>🌙 قمر الشام</title>
 
-<!-- Firebase SDK v9 compat -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://qamaralshamtest-default-rtdb.europe-west1.firebasedatabase.app" crossorigin>
 
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{
-  font-family:'Cairo',system-ui,sans-serif;
-  background:linear-gradient(180deg,#050508,#0a0a15);
-  color:#f3f4f6;min-height:100vh;
-  display:flex;align-items:flex-start;justify-content:center;
-  padding:20px 12px 60px;direction:rtl;
-}
-.box{
-  max-width:600px;width:100%;
-  background:#0a0a15;border:2px solid #d4af37;
-  border-radius:20px;padding:24px 18px;
-  box-shadow:0 0 40px rgba(255,215,0,.15);
-}
-h1{color:#ffd700;font-size:22px;margin-bottom:6px;font-weight:900;text-align:center}
-.sub{color:#9ca3af;font-size:12px;margin-bottom:18px;text-align:center}
-.section-title{
-  color:#ffd700;font-size:13px;font-weight:900;
-  margin:16px 0 8px;padding-bottom:6px;
-  border-bottom:1px solid rgba(212,175,55,.25);
-}
-.status-list{
-  text-align:right;background:rgba(0,0,0,.4);
-  border-radius:10px;padding:12px;margin:10px 0;
-  border:1px solid rgba(212,175,55,.2);
-}
-.row{
-  display:flex;justify-content:space-between;
-  padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);
-  font-size:12px;
-}
-.row:last-child{border-bottom:none}
-.row .name{color:#9ca3af;font-weight:700;flex:1;text-align:right}
-.row .val{color:#ffd700;font-weight:900;margin-right:10px}
-.ok{color:#4ade80 !important}
-.err{color:#ff4444 !important}
-.warn{color:#ff9800 !important}
-.skip{color:#6b7280 !important;opacity:.6}
-.final{
-  margin-top:16px;padding:12px;
-  border-radius:10px;font-weight:900;font-size:13px;text-align:center;
-}
-.final.ok{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.4)}
-.final.err{background:rgba(239,68,68,.15);color:#ff4444;border:1px solid rgba(239,68,68,.4)}
-.final.warn{background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.4)}
-.log{
-  margin-top:12px;
-  background:rgba(0,0,0,.6);border-radius:8px;
-  padding:10px;font-family:monospace;font-size:10px;
-  color:#c084fc;max-height:250px;overflow-y:auto;
-  direction:ltr;text-align:left;line-height:1.5;
-}
-.log div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
-#qamar-boot-loader{
-  position:fixed;inset:0;
-  background:#050508;z-index:9999;
-  display:flex;align-items:center;justify-content:center;
-  flex-direction:column;gap:16px;
-  transition:opacity .4s;
-}
-#qamar-boot-loader.qamar-boot-hide{opacity:0;pointer-events:none}
-.spinner{
-  width:50px;height:50px;
-  border:4px solid rgba(212,175,55,.2);
-  border-top-color:#ffd700;border-radius:50%;
-  animation:spin 1s linear infinite;
-}
-@keyframes spin{to{transform:rotate(360deg)}}
-#qamar-boot-status{color:#ffd700;font-weight:900;font-size:14px}
-#qamar-boot-status.ready{color:#4ade80}
-.loading-files{
-  margin-top:10px;padding:10px;
-  background:rgba(168,85,247,.1);
-  border:1px solid rgba(168,85,247,.3);
-  border-radius:8px;
-  font-size:11px;color:#c084fc;
-  text-align:center;
-}
-</style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap">
+
+<link rel="stylesheet" href="styles/core.css">
+<link rel="stylesheet" href="styles/chat.css">
+
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='78' font-size='80'>🌙</text></svg>">
+
+<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
 </head>
+
 <body>
 
-<div id="qamar-boot-loader">
-  <div class="spinner"></div>
-  <div id="qamar-boot-status">جاري التحميل...</div>
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Boot Loader                            ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="qamar-boot-loader" class="qamar-boot-loader">
+    <div class="qbl-inner">
+        <div class="qbl-moon">🌙</div>
+        <div id="qamar-boot-title" class="qbl-title">قمر الشام</div>
+        <div class="qbl-track" id="qamar-boot-bar-track">
+            <div class="qbl-bar" id="qamar-boot-bar"></div>
+        </div>
+        <div id="qamar-boot-status" class="qbl-status">جاري التحميل...</div>
+    </div>
 </div>
 
-<div class="box">
-  <h1>🌙 قمر الشام v2</h1>
-  <div class="sub">لوحة اختبار شاملة — المرحلة 1 + 2 + 3+</div>
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Starfield Background                    ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="starfield" class="starfield"></div>
 
-  <div id="loading-info" class="loading-files">⏳ جاري تحميل الملفات...</div>
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Login Screen                           ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="login-screen" class="login-screen">
+    <div class="ls-card">
+        <div class="ls-header">
+            <div class="ls-moon">🌙</div>
+            <h1 class="ls-title">قمر الشام</h1>
+            <p class="ls-subtitle">بوابتك إلى نجوم الشام</p>
+        </div>
 
-  <div id="status-list" style="display:none"></div>
+        <div class="ls-tabs" role="tablist">
+            <button class="ls-tab active" data-ls-tab="guest" type="button">🎭 زائر</button>
+            <button class="ls-tab" data-ls-tab="member" type="button">👤 عضو</button>
+            <button class="ls-tab" data-ls-tab="register" type="button">✨ تسجيل</button>
+        </div>
 
-  <div class="final" id="final">⏳ جاري الفحص...</div>
+        <!-- Guest -->
+        <div class="ls-panel active" data-ls-panel="guest">
+            <p class="ls-hint">ادخل كزائر — بدون بريد، بدون كلمة مرور. تستطيع الكتابة في الروم العام، لكن لا يمكنك الخاص أو الرفع.</p>
+            <button id="ls-guest-btn" class="ls-btn ls-btn-primary" type="button">
+                <i class="fas fa-door-open"></i> دخول سريع
+            </button>
+        </div>
 
-  <div class="log" id="log"><div>📋 سجل التشغيل:</div></div>
+        <!-- Member -->
+        <div class="ls-panel" data-ls-panel="member">
+            <div class="ls-field">
+                <label for="ls-email">البريد الإلكتروني</label>
+                <input id="ls-email" type="email" autocomplete="email" placeholder="you@example.com">
+            </div>
+            <div class="ls-field">
+                <label for="ls-password">كلمة المرور</label>
+                <input id="ls-password" type="password" autocomplete="current-password" placeholder="••••••">
+            </div>
+            <button id="ls-login-btn" class="ls-btn ls-btn-primary" type="button">
+                <i class="fas fa-sign-in-alt"></i> تسجيل الدخول
+            </button>
+            <button id="ls-forgot-btn" class="ls-btn ls-btn-link" type="button">نسيت كلمة المرور؟</button>
+        </div>
+
+        <!-- Register -->
+        <div class="ls-panel" data-ls-panel="register">
+            <div class="ls-field">
+                <label for="ls-reg-email">البريد الإلكتروني</label>
+                <input id="ls-reg-email" type="email" autocomplete="email" placeholder="you@example.com">
+            </div>
+            <div class="ls-field">
+                <label for="ls-reg-password">كلمة المرور (6+)</label>
+                <input id="ls-reg-password" type="password" autocomplete="new-password" placeholder="••••••">
+            </div>
+            <div class="ls-field">
+                <label for="ls-reg-name">الاسم الظاهر</label>
+                <input id="ls-reg-name" type="text" maxlength="40" placeholder="اسمك في الشام">
+            </div>
+            <button id="ls-register-btn" class="ls-btn ls-btn-primary" type="button">
+                <i class="fas fa-user-plus"></i> إنشاء حساب
+            </button>
+            <p class="ls-hint ls-hint-small">إذا كنت زائراً حالياً → سيتم ترقية حسابك بنفس UID.</p>
+        </div>
+
+        <div id="ls-error" class="ls-error hidden"></div>
+
+        <div class="ls-footer">
+            <span class="ls-version">v2.0.0</span>
+        </div>
+    </div>
 </div>
 
-<script>
-(function(){
-  'use strict';
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Main App                                ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="main-app" class="main-app hidden">
 
-  /* ═══════════════════════════════════════════════════════
-      قائمة الملفات كاملة (72 ملف) — بترتيب التحميل الصحيح
-     ═══════════════════════════════════════════════════════ */
-  const FILES = [
-    // ─── Core (5) ───
-    { path: 'core/config.js',                    key: 'core_config',     label: 'core/config.js' },
-    { path: 'core/constants.js',                 key: 'core_constants',  label: 'core/constants.js' },
-    { path: 'core/utils.js',                     key: 'core_utils',      label: 'core/utils.js' },
-    { path: 'core/state.js',                     key: 'core_state',      label: 'core/state.js' },
+    <!-- Header -->
+    <header id="chat-header" class="chat-header">
+        <button id="menu-btn" class="header-btn" type="button" aria-label="القائمة">
+            <i class="fas fa-bars"></i>
+        </button>
+        <div class="header-title">
+            <span id="room-icon" class="room-icon">🌍</span>
+            <div class="room-info">
+                <div id="room-title" class="room-title">الروم العام</div>
+                <div id="room-subtitle" class="room-subtitle">0 متصل</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button id="pm-slot" class="header-btn" type="button" aria-label="الخاص">
+                <i class="fas fa-envelope"></i>
+                <span id="pm-badge" class="badge hidden">0</span>
+            </button>
+            <button id="notif-slot" class="header-btn" type="button" aria-label="التنبيهات">
+                <i class="fas fa-bell"></i>
+                <span id="notif-badge" class="badge hidden">0</span>
+            </button>
+            <button id="king-room-btn" class="header-btn king-only hidden" type="button" aria-label="غرفة الملك">
+                👑
+            </button>
+        </div>
+    </header>
 
-    // ─── Firebase (4) ───
-    { path: 'firebase/firebase.js',              key: 'fb_firebase',     label: 'firebase/firebase.js' },
-    { path: 'firebase/optimizers.js',            key: 'fb_opt',          label: 'firebase/optimizers.js' },
-    { path: 'firebase/resilience.js',            key: 'fb_res',          label: 'firebase/resilience.js' },
-    { path: 'firebase/cleaners.js',              key: 'fb_clean',        label: 'firebase/cleaners.js' },
+    <!-- Room Alert (banner) -->
+    <div id="room-alert" class="room-alert hidden">
+        <span id="room-alert-text"></span>
+        <button id="room-alert-close" type="button">✕</button>
+    </div>
 
-    // ─── Auth (4) ───
-    { path: 'auth/auth.js',                      key: 'auth_auth',       label: 'auth/auth.js' },
-    { path: 'auth/session.js',                   key: 'auth_session',    label: 'auth/session.js' },
-    { path: 'auth/identity.js',                  key: 'auth_identity',   label: 'auth/identity.js' },
-    { path: 'auth/ranks.js',                     key: 'auth_ranks',      label: 'auth/ranks.js' },
+    <!-- Voice Bar (slots) -->
+    <div id="voice-bar" class="voice-bar hidden"></div>
 
-    // ─── Security (5) ───
-    { path: 'security/device-guard.js',          key: 'sec_device',      label: 'security/device-guard.js' },
-    { path: 'security/audit.js',                 key: 'sec_audit',       label: 'security/audit.js' },
-    { path: 'security/bans.js',                  key: 'sec_bans',        label: 'security/bans.js' },
-    { path: 'security/reports.js',               key: 'sec_reports',     label: 'security/reports.js' },
-    { path: 'security/suspects.js',              key: 'sec_suspects',    label: 'security/suspects.js' },
+    <!-- Messages Container -->
+    <div id="chat-area" class="chat-area">
+        <div id="messages-container" class="messages-container"></div>
+    </div>
 
-    // ─── Chat (4) ───
-    { path: 'chat/chat.js',                      key: 'chat_chat',       label: 'chat/chat.js' },
-    { path: 'chat/chat-input.js',                key: 'chat_input',      label: 'chat/chat-input.js' },
-    { path: 'chat/chat-ui.js',                   key: 'chat_ui',         label: 'chat/chat-ui.js' },
-    { path: 'chat/chat-effects.js',              key: 'chat_effects',    label: 'chat/chat-effects.js' },
+    <!-- Input Area -->
+    <div id="input-area" class="input-area">
 
-    // ─── Rooms (3) ───
-    { path: 'rooms/rooms.js',                    key: 'rooms_rooms',     label: 'rooms/rooms.js' },
-    { path: 'rooms/room-settings.js',            key: 'rooms_settings',  label: 'rooms/room-settings.js' },
-    { path: 'rooms/room-voice.js',               key: 'rooms_voice',     label: 'rooms/room-voice.js' },
+        <!-- Reply Preview -->
+        <div id="reply-preview" class="reply-preview" style="display:none;"></div>
 
-    // ─── PM (4) ───
-    { path: 'pm/pm.js',                          key: 'pm_pm',           label: 'pm/pm.js' },
-    { path: 'pm/pm-archiver.js',                 key: 'pm_archiver',     label: 'pm/pm-archiver.js' },
-    { path: 'pm/pm-monitor.js',                  key: 'pm_monitor',      label: 'pm/pm-monitor.js' },
-    { path: 'pm/pm-voice.js',                    key: 'pm_voice',        label: 'pm/pm-voice.js' },
+        <!-- Char Counter -->
+        <div id="char-counter" class="char-counter" style="display:none;">0</div>
 
-    // ─── Voice (3) ───
-    { path: 'voice/voice-system.js',             key: 'voice_sys',       label: 'voice/voice-system.js' },
-    { path: 'voice/voice-studio.js',             key: 'voice_studio',    label: 'voice/voice-studio.js' },
-    { path: 'voice/voice-monitor.js',            key: 'voice_monitor',   label: 'voice/voice-monitor.js' },
+        <!-- Actions Row -->
+        <div class="input-row">
+            <button id="plus-btn" class="input-action-btn" type="button" aria-label="أدوات">
+                <i class="fas fa-plus"></i>
+            </button>
+            <textarea
+                id="message-input"
+                class="message-input"
+                placeholder="اكتب رسالة..."
+                rows="1"
+                maxlength="2000"
+                autocomplete="off"
+                autocorrect="off"
+                spellcheck="false"
+            ></textarea>
+            <button id="emoji-btn" class="input-action-btn" type="button" aria-label="إيموجي">
+                <i class="fas fa-smile"></i>
+            </button>
+            <button id="mic-btn" class="input-action-btn" type="button" aria-label="مايك">
+                <i class="fas fa-microphone"></i>
+            </button>
+            <button id="send-btn" class="send-btn disabled" type="button" aria-label="إرسال">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
 
-    // ─── Bots (4) ───
-    { path: 'bots/bots.js',                      key: 'bots_bots',       label: 'bots/bots.js' },
-    { path: 'bots/bot-commands.js',              key: 'bots_cmds',       label: 'bots/bot-commands.js' },
-    { path: 'bots/bot-training.js',              key: 'bots_training',   label: 'bots/bot-training.js' },
-    { path: 'bots/guardian-inbox.js',            key: 'bots_guardian',   label: 'bots/guardian-inbox.js' },
+    </div>
 
-    // ─── King (3) ───
-    { path: 'king/king-room.js',                 key: 'king_room',       label: 'king/king-room.js' },
-    { path: 'king/king-actions.js',              key: 'king_actions',    label: 'king/king-actions.js' },
-    { path: 'king/king-queens.js',               key: 'king_queens',     label: 'king/king-queens.js' },
+    <!-- Bottom Nav -->
+    <nav id="bottom-nav" class="bottom-nav">
+        <button class="nav-btn active" data-nav="chat" type="button">
+            <i class="fas fa-comments"></i><span>الشات</span>
+        </button>
+        <button class="nav-btn" data-nav="rooms" type="button">
+            <i class="fas fa-door-open"></i><span>الغرف</span>
+        </button>
+        <button class="nav-btn" data-nav="pm" type="button">
+            <i class="fas fa-envelope"></i><span>الخاص</span>
+        </button>
+        <button class="nav-btn" data-nav="notifications" type="button">
+            <i class="fas fa-bell"></i><span>التنبيهات</span>
+        </button>
+        <button class="nav-btn" data-nav="profile" type="button">
+            <i class="fas fa-user"></i><span>حسابي</span>
+        </button>
+    </nav>
 
-    // ─── Stories (2) ───
-    { path: 'stories/stories.js',                key: 'stories_stories', label: 'stories/stories.js' },
-    { path: 'stories/stories-cleaner.js',        key: 'stories_clean',   label: 'stories/stories-cleaner.js' },
+</div>
 
-    // ─── Media (4) ───
-    { path: 'media/uploader.js',                 key: 'media_upload',    label: 'media/uploader.js' },
-    { path: 'media/media-picker.js',             key: 'media_picker',    label: 'media/media-picker.js' },
-    { path: 'media/paint.js',                    key: 'media_paint',     label: 'media/paint.js' },
-    { path: 'media/styled-messages.js',          key: 'media_styled',    label: 'media/styled-messages.js' },
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Sidebars                                ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 
-    // ─── Effects (2) ───
-    { path: 'effects/name-effects.js',           key: 'eff_name',        label: 'effects/name-effects.js' },
-    { path: 'effects/frames-engine.js',          key: 'eff_frames',      label: 'effects/frames-engine.js' },
+<!-- Rooms Sidebar -->
+<aside id="sidebar-rooms" class="sidebar sidebar-right" data-sidebar="rooms">
+    <div class="sidebar-header">
+        <h3>🚪 الغرف</h3>
+        <button class="sidebar-close" type="button">✕</button>
+    </div>
+    <div id="rooms-list" class="sidebar-body"></div>
+</aside>
 
-    // ─── Notifications (2) ───
-    { path: 'notifications/notifications.js',    key: 'notif_notif',     label: 'notifications/notifications.js' },
-    { path: 'notifications/room-alerts.js',      key: 'notif_alerts',    label: 'notifications/room-alerts.js' },
+<!-- Notifications Sidebar -->
+<aside id="sidebar-notifications" class="sidebar sidebar-right" data-sidebar="notifications">
+    <div class="sidebar-header">
+        <h3>🔔 التنبيهات</h3>
+        <button class="sidebar-close" type="button">✕</button>
+    </div>
+    <div id="notifications-list" class="sidebar-body"></div>
+</aside>
 
-    // ─── UI (4) ───
-    { path: 'ui/ui-core.js',                     key: 'ui_core',         label: 'ui/ui-core.js' },
-    { path: 'ui/ui-nav.js',                      key: 'ui_nav',          label: 'ui/ui-nav.js' },
-    { path: 'ui/ui-input.js',                    key: 'ui_input',        label: 'ui/ui-input.js' },
-    { path: 'ui/ui-mobile.js',                   key: 'ui_mobile',       label: 'ui/ui-mobile.js' },
+<!-- PM Sidebar -->
+<aside id="sidebar-pm" class="sidebar sidebar-right" data-sidebar="pm">
+    <div class="sidebar-header">
+        <h3>💬 المحادثات</h3>
+        <button class="sidebar-close" type="button">✕</button>
+    </div>
+    <div id="pm-chats-list" class="sidebar-body"></div>
+</aside>
 
-    // ─── Guest (1) ───
-    { path: 'guest/guest.js',                    key: 'guest_guest',     label: 'guest/guest.js' },
+<!-- Settings Sidebar -->
+<aside id="sidebar-settings" class="sidebar sidebar-right" data-sidebar="settings">
+    <div class="sidebar-header">
+        <h3>⚙️ الإعدادات</h3>
+        <button class="sidebar-close" type="button">✕</button>
+    </div>
+    <div id="settings-list" class="sidebar-body"></div>
+</aside>
 
-    // ─── Social (2) ───
-    { path: 'social/social.js',                  key: 'soc_social',      label: 'social/social.js' },
-    { path: 'social/profiles.js',                key: 'soc_profiles',    label: 'social/profiles.js' },
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ PM Modal                                ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="pm-modal" class="pm-modal hidden">
+    <div class="pm-head">
+        <button id="pm-back" class="header-btn" type="button">
+            <i class="fas fa-arrow-right"></i>
+        </button>
+        <img id="pm-peer-avatar" class="pm-peer-avatar" src="" alt="">
+        <div class="pm-peer-info">
+            <div id="pm-peer-name" class="pm-peer-name">—</div>
+            <div id="pm-peer-status" class="pm-peer-status">—</div>
+        </div>
+        <button id="pm-menu" class="header-btn" type="button">
+            <i class="fas fa-ellipsis-v"></i>
+        </button>
+    </div>
+    <div id="pc-messages" class="pc-messages"></div>
+    <div id="pc-typing" class="pc-typing hidden">يكتب...</div>
+    <div class="pc-input-row">
+        <textarea id="pc-input" class="message-input" rows="1" placeholder="اكتب رسالة خاصة..."></textarea>
+        <button id="pc-send" class="send-btn disabled" type="button">
+            <i class="fas fa-paper-plane"></i>
+        </button>
+    </div>
+</div>
 
-    // ─── Misc (4) ───
-    { path: 'misc/dice.js',                      key: 'misc_dice',       label: 'misc/dice.js' },
-    { path: 'misc/youtube.js',                   key: 'misc_youtube',    label: 'misc/youtube.js' },
-    { path: 'misc/invisible.js',                 key: 'misc_invisible',  label: 'misc/invisible.js' },
-    { path: 'misc/islamic-library.js',           key: 'misc_islamic',    label: 'misc/islamic-library.js' },
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Bot Profile Modal                       ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="bot-profile-modal" class="modal hidden">
+    <div class="modal-card bot-card">
+        <button class="modal-close" type="button">✕</button>
+        <div id="bot-profile-content"></div>
+    </div>
+</div>
 
-    // ─── Debug (1) ───
-    { path: 'debug/debug.js',                    key: 'debug_debug',     label: 'debug/debug.js' },
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Upgrade Modal (guest → member)          ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="upgrade-modal" class="modal hidden">
+    <div class="modal-card upgrade-card">
+        <button class="modal-close" type="button">✕</button>
+        <div class="upgrade-hero">✨</div>
+        <h3 class="upgrade-title">رقّي حسابك</h3>
+        <p class="upgrade-text">الترقية تحفظ UID ونقاطك وبروفايلك — بدون فقدان أي شيء.</p>
+        <button id="upgrade-btn" class="ls-btn ls-btn-primary" type="button">
+            <i class="fas fa-arrow-up"></i> ابدأ الترقية
+        </button>
+    </div>
+</div>
 
-    // ─── Boot (آخر شيء) ───
-    { path: 'core/boot.js',                      key: 'core_boot',       label: 'core/boot.js' }
-  ];
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Profile Frame Container (iframe)        ═══ -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="profile-frame-container" class="profile-frame-container hidden">
+    <div class="pfc-backdrop"></div>
+    <div class="pfc-frame">
+        <button id="pfc-close" class="pfc-close" type="button">✕</button>
+        <iframe id="profile-iframe" class="profile-iframe" src="about:blank" allow="microphone;camera;autoplay"></iframe>
+    </div>
+</div>
 
-  /* ═══════════════════════════════════════════════════════
-      الحالة
-     ═══════════════════════════════════════════════════════ */
-  const State = {
-    loaded: {},       // { key: true/false }
-    loadedCount: 0,
-    missingCount: 0,
-    startTime: Date.now()
-  };
+<!-- ══════════════════════════════════════════════ -->
+<!-- ═══ Scripts — ordered by dependency         ═══ -->
+<!-- ══════════════════════════════════════════════ -->
 
-  const logEl = document.getElementById('log');
-  function log(msg){
-    const d = document.createElement('div');
-    d.textContent = '› ' + msg;
-    logEl.appendChild(d);
-    logEl.scrollTop = logEl.scrollHeight;
-  }
+<!-- ─── Stage 0: CORE ─── -->
+<script defer src="core/config.js"></script>
+<script defer src="core/constants.js"></script>
+<script defer src="core/utils.js"></script>
+<script defer src="core/state.js"></script>
+<script defer src="core/net-quality.js"></script>
+<script defer src="core/adaptive.js"></script>
 
-  /* ═══════════════════════════════════════════════════════
-      تحقق من وجود ملف (HEAD request)
-     ═══════════════════════════════════════════════════════ */
-  function fileExists(url){
-    return fetch(url, { method: 'HEAD', cache: 'no-cache' })
-      .then(function(r){ return r.ok; })
-      .catch(function(){ return false; });
-  }
+<!-- ─── Stage 1: FIREBASE ─── -->
+<script defer src="firebase/firebase.js"></script>
+<script defer src="firebase/optimizers.js"></script>
+<script defer src="firebase/resilience.js"></script>
+<script defer src="firebase/cleaners.js"></script>
 
-  /* ═══════════════════════════════════════════════════════
-      حمّل ملف <script>
-     ═══════════════════════════════════════════════════════ */
-  function loadScript(url){
-    return new Promise(function(resolve){
-      const s = document.createElement('script');
-      s.src = url;
-      s.async = false;   // حافظ على الترتيب
-      s.onload = function(){ resolve(true); };
-      s.onerror = function(){ resolve(false); };
-      document.head.appendChild(s);
-    });
-  }
+<!-- ─── Stage 2: AUTH ─── -->
+<script defer src="auth/auth.js"></script>
+<script defer src="auth/session.js"></script>
+<script defer src="auth/identity.js"></script>
+<script defer src="auth/ranks.js"></script>
 
-  /* ═══════════════════════════════════════════════════════
-      حمّل كل الملفات بالتسلسل
-     ═══════════════════════════════════════════════════════ */
-  function loadAllFiles(){
-    log('🔍 فحص ' + FILES.length + ' ملف...');
+<!-- ─── Stage 3: SECURITY ─── -->
+<script defer src="security/audit.js"></script>
+<script defer src="security/device-guard.js"></script>
+<script defer src="security/bans.js"></script>
+<script defer src="security/reports.js"></script>
+<script defer src="security/suspects.js"></script>
 
-    let chain = Promise.resolve();
-    let checked = 0;
+<!-- ─── Stage 4: CHAT ─── -->
+<script defer src="chat/chat-effects.js"></script>
+<script defer src="chat/chat.js"></script>
+<script defer src="chat/chat-ui.js"></script>
+<script defer src="chat/chat-input.js"></script>
 
-    FILES.forEach(function(file){
-      chain = chain.then(function(){
-        return fileExists(file.path).then(function(exists){
-          checked++;
-          if (exists) {
-            return loadScript(file.path).then(function(ok){
-              State.loaded[file.key] = ok;
-              if (ok) {
-                State.loadedCount++;
-                log('✅ ' + file.label);
-              } else {
-                State.missingCount++;
-                log('⚠️ فشل تحميل: ' + file.label);
-              }
-            });
-          } else {
-            State.loaded[file.key] = false;
-            State.missingCount++;
-            log('○ لم يُرفع بعد: ' + file.label);
-          }
-        });
-      });
-    });
+<!-- ─── Stage 5: ROOMS ─── -->
+<script defer src="rooms/room-settings.js"></script>
+<script defer src="rooms/room-voice.js"></script>
+<script defer src="rooms/rooms.js"></script>
 
-    return chain.then(function(){
-      log('═══════════════════');
-      log('📊 النتيجة: ' + State.loadedCount + ' محمّل، ' + State.missingCount + ' مفقود');
-      log('⏱️ الزمن: ' + (Date.now() - State.startTime) + 'ms');
-      return { loaded: State.loadedCount, missing: State.missingCount };
-    });
-  }
+<!-- ─── Stage 6: PM ─── -->
+<script defer src="pm/pm-guardian-queue.js"></script>
+<script defer src="pm/pm.js"></script>
+<script defer src="pm/pm-voice.js"></script>
+<script defer src="pm/pm-monitor.js"></script>
+<script defer src="pm/pm-archiver.js"></script>
 
-  /* ═══════════════════════════════════════════════════════
-      بناء لوحة العرض
-     ═══════════════════════════════════════════════════════ */
-  function renderStatusList(){
-    const list = document.getElementById('status-list');
-    list.style.display = 'block';
+<!-- ─── Stage 7: VOICE ─── -->
+<script defer src="voice/voice-system.js"></script>
+<script defer src="voice/voice-studio.js"></script>
+<script defer src="voice/voice-monitor.js"></script>
 
-    // تجميع حسب المجلد
-    const groups = {};
-    FILES.forEach(function(f){
-      const parts = f.path.split('/');
-      const folder = parts.length > 1 ? parts[0] : 'root';
-      if (!groups[folder]) groups[folder] = [];
-      groups[folder].push(f);
-    });
+<!-- ─── Stage 8: BOTS ─── -->
+<script defer src="bots/bots.js"></script>
+<script defer src="bots/bot-commands.js"></script>
+<script defer src="bots/bot-training.js"></script>
+<script defer src="bots/guardian-inbox.js"></script>
 
-    let html = '';
-    Object.keys(groups).forEach(function(folder){
-      html += '<div class="section-title">📁 ' + folder + '/</div>';
-      html += '<div class="status-list">';
-      groups[folder].forEach(function(f){
-        const isLoaded = State.loaded[f.key] === true;
-        const cls = isLoaded ? 'ok' : 'skip';
-        const icon = isLoaded ? '✅' : '○';
-        html += '<div class="row">';
-        html += '<span class="name">' + f.label + '</span>';
-        html += '<span class="val ' + cls + '">' + icon + '</span>';
-        html += '</div>';
-      });
-      html += '</div>';
-    });
+<!-- ─── Stage 9: KING ─── -->
+<script defer src="king/king-actions.js"></script>
+<script defer src="king/king-queens.js"></script>
+<script defer src="king/king-room.js"></script>
 
-    list.innerHTML = html;
-  }
+<!-- ─── Stage 10: OPTIONAL (onerror = silent) ─── -->
+<script defer src="room-picker.js" data-optional="true" onerror="void 0"></script>
 
-  /* ═══════════════════════════════════════════════════════
-      تشغيل اختبارات عامة بعد التحميل
-     ═══════════════════════════════════════════════════════ */
-  function runTests(){
-    const finalEl = document.getElementById('final');
+<script defer src="stories/stories.js" data-optional="true" onerror="void 0"></script>
+<script defer src="stories/stories-ui.js" data-optional="true" onerror="void 0"></script>
 
-    // فحص المكونات الموجودة
-    const tests = [
-      { name: 'Firebase SDK',        ok: typeof firebase !== 'undefined' },
-      { name: 'QAMAR (constants)',   ok: !!(window.QAMAR && window.QAMAR.ROOMS) },
-      { name: 'escapeHtml (utils)',  ok: typeof window.escapeHtml === 'function' },
-      { name: 'AppState (state)',    ok: !!window.AppState },
-      { name: 'EventBus',            ok: !!window.EventBus },
-      { name: 'QamarFB',             ok: !!window.QamarFB },
-      { name: 'QamarOpt',            ok: !!window.QamarOpt },
-      { name: 'QamarResilience',     ok: !!window.QamarResilience },
-      { name: 'QamarCleaners',       ok: !!window.QamarCleaners },
-      { name: 'QamarAuth',           ok: !!window.QamarAuth },
-      { name: 'QamarSession',        ok: !!window.QamarSession },
-      { name: 'QamarIdentity',       ok: !!window.QamarIdentity },
-      { name: 'QamarRanks',          ok: !!window.QamarRanks },
-      { name: 'QamarBoot',           ok: !!window.QamarBoot }
-    ];
+<script defer src="media/uploader.js" data-optional="true" onerror="void 0"></script>
+<script defer src="media/media-picker.js" data-optional="true" onerror="void 0"></script>
+<script defer src="media/viewer.js" data-optional="true" onerror="void 0"></script>
+<script defer src="media/emoji-picker.js" data-optional="true" onerror="void 0"></script>
 
-    let okCount = 0, total = 0;
-    tests.forEach(function(t){
-      total++;
-      if (t.ok) {
-        okCount++;
-        log('✅ ' + t.name);
-      } else {
-        log('○ ' + t.name + ' — غير موجود');
-      }
-    });
+<script defer src="effects/frames-engine.js" data-optional="true" onerror="void 0"></script>
+<script defer src="effects/name-effects-ui.js" data-optional="true" onerror="void 0"></script>
 
-    // اختبر Firebase connection
-    if (window.QamarFB && window.QamarFB.isReady()) {
-      window.QamarFB.get('.info/connected', 5000).then(function(v){
-        log('🔌 Firebase connected: ' + v);
-      }).catch(function(){});
-    }
+<script defer src="notifications/notifications.js" data-optional="true" onerror="void 0"></script>
+<script defer src="notifications/alerts.js" data-optional="true" onerror="void 0"></script>
 
-    if (okCount === total) {
-      finalEl.className = 'final ok';
-      finalEl.textContent = '✅ كل الأنظمة المتاحة تعمل — (' + okCount + '/' + total + ')';
-      log('═══════════════════');
-      log('🎉 ALL SYSTEMS GREEN');
-      log('═══════════════════');
-    } else if (okCount >= 5) {
-      finalEl.className = 'final warn';
-      finalEl.textContent = '⚠️ ' + okCount + '/' + total + ' نظام يعمل — الباقي قيد البناء';
-      log('⏳ ' + (total - okCount) + ' نظام لم يُرفع بعد');
-    } else {
-      finalEl.className = 'final err';
-      finalEl.textContent = '⚠️ مشكلة — فقط ' + okCount + '/' + total;
-    }
+<script defer src="ui/sidebar.js" data-optional="true" onerror="void 0"></script>
+<script defer src="ui/modal.js" data-optional="true" onerror="void 0"></script>
+<script defer src="ui/context-menu.js" data-optional="true" onerror="void 0"></script>
 
-    // تحديث معلومات التحميل
-    const info = document.getElementById('loading-info');
-    info.innerHTML = '✅ تم تحميل ' + State.loadedCount + ' ملف' +
-                    (State.missingCount > 0 ? ' · ⏳ ' + State.missingCount + ' قيد البناء' : '');
-  }
+<script defer src="guest/guest-ui.js" data-optional="true" onerror="void 0"></script>
 
-  /* ═══════════════════════════════════════════════════════
-      ابدأ
-     ═══════════════════════════════════════════════════════ */
-  function start(){
-    loadAllFiles().then(function(){
-      renderStatusList();
-      // انتظر boot.js قليلاً
-      setTimeout(runTests, 2500);
-    });
-  }
+<script defer src="social/friends.js" data-optional="true" onerror="void 0"></script>
+<script defer src="social/mentions.js" data-optional="true" onerror="void 0"></script>
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start);
-  } else {
-    start();
-  }
+<script defer src="misc/dice.js" data-optional="true" onerror="void 0"></script>
+<script defer src="misc/youtube.js" data-optional="true" onerror="void 0"></script>
+<script defer src="misc/painter.js" data-optional="true" onerror="void 0"></script>
+<script defer src="misc/text-styler.js" data-optional="true" onerror="void 0"></script>
 
-})();
-</script>
+<script defer src="debug/debug-panel.js" data-optional="true" onerror="void 0"></script>
+
+<!-- ─── Stage 11: BOOT (آخر شيء) ─── -->
+<script defer src="core/boot.js"></script>
 
 </body>
 </html>
