@@ -607,29 +607,23 @@
       };
     }
 
-    // ⭐ زر المعاينة/الطي (يسار)
+    // ⭐ زر المعاينة/الطي (يسار) — يستخدم location.href مباشرة
     var col = $id('btn-collapse-info');
     if (col && !col.__b) {
       col.__b = true;
+      col.title = (S.mode === 'owner') ? 'معاينة كزائر' : 'طي المعلومات';
       col.onclick = function (e) {
         e.preventDefault();
+        e.stopPropagation();
+
         if (S.mode === 'owner') {
-          // معاينة كزائر — أرسل للـ parent ليحدّث iframe
-          try {
-            if (window.parent && window.parent !== window) {
-              window.parent.postMessage({
-                action: 'openProfileAsVisitor',
-                uid: S.uid
-              }, '*');
-            } else {
-              location.href = location.pathname + '?uid=' + encodeURIComponent(S.uid) + '&preview=1';
-            }
-          } catch (err) {
-            location.href = location.pathname + '?uid=' + encodeURIComponent(S.uid) + '&preview=1';
-          }
+          toast('👁️ جاري فتح المعاينة...');
+          var url = location.pathname + '?uid=' + encodeURIComponent(S.uid) + '&preview=1&t=' + Date.now();
+          location.href = url;
         } else {
-          // طي المعلومات (visitor mode)
           document.body.classList.toggle('visitor-collapsed');
+          var collapsed = document.body.classList.contains('visitor-collapsed');
+          toast(collapsed ? '👁️ طي' : '👁️ فتح');
         }
       };
     }
