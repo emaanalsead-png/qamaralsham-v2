@@ -1,4 +1,4 @@
-/* profile-core.js — v3 (fx CSS injection + UI namespace) */
+/* profile-core.js — v4 (fixed animation pile-up + debounced live) */
 (function () {
   'use strict';
 
@@ -8,6 +8,7 @@
     collapsed: false, presence: null,
     liveUnsubs: []
   };
+  var _liveTimer = null;
 
   function P(name) {
     try { return window.parent && window.parent[name]; } catch (e) { return null; }
@@ -73,7 +74,7 @@
   }
   function FB() { return P('QamarFB'); }
 
-  /* ═══ حقن CSS من الأب داخل الـ iframe ═══ */
+  /* ═══ حقن CSS من الأب ═══ */
   function _injectFxCSS(retries) {
     if (document.getElementById('fx-styles-iframe')) return;
     retries = retries || 0;
@@ -90,12 +91,9 @@
       s.id = 'fx-styles-iframe';
       s.textContent = combined;
       document.head.appendChild(s);
-      console.log('[profile-core] fx CSS injected | bytes=' + combined.length);
       return;
     }
-    if (retries < 12) {
-      setTimeout(function () { _injectFxCSS(retries + 1); }, 250);
-    }
+    if (retries < 12) setTimeout(function () { _injectFxCSS(retries + 1); }, 250);
   }
 
   function fetchUser(uid) {
@@ -118,42 +116,63 @@
     } catch (e) { return Promise.resolve(0); }
   }
 
+  /* ═══ applyNameEffects — مع تنظيف animations ═══ */
   function applyNameEffects(el, user) {
     if (!el) return;
-    var UI = P('QamarNameEffectsUI');
-    var CHAT = P('QamarNameEffects');
 
-    /* تنظيف كامل */
+    /* 1) إيقاف كل animations على العنصر */
+    el.style.animation = 'none';
+    el.style.webkitAnimation = 'none';
+
+    /* 2) إزالة كل classes qne-/qfx- السابقة (لا تتراكم) */
+    var keep = [];
+    for (var i = 0; i < el.classList.length; i++) {
+      var c = el.classList[i];
+      if (c.indexOf('qne-') !== 0 && c.indexOf('qfx-') !== 0) keep.push(c);
+    }
+    el.className = keep.join(' ');
+
+    /* 3) تصفير styles inline */
     el.style.color = '';
     el.style.background = '';
     el.style.backgroundImage = '';
+    el.style.backgroundClip = '';
+    el.style.webkitBackgroundClip = '';
     el.style.webkitTextFillColor = '';
     el.style.textShadow = '';
-    el.classList.remove('qne-shimmer', 'qne-glow', 'qne-glow-neon', 'qne-glow-flicker',
-      'qne-glow-breathe', 'qne-tx-breathe', 'qne-tx-wave', 'qne-tx-tilt', 'qne-tx-spin');
+    el.style.transform = '';
+    el.style.filter = '';
 
-    /* بناء cfg بالصيغة الجديدة (mode/value/c1/c2/c3) */
+    /* 4) Force reflow لإلغاء animations عالقة */
+    void el.offsetWidth;
+    el.style.animation = '';
+    el.style.webkitAnimation = '';
+
+    /* 5) بناء cfg */
     var cfg = null;
-    if (user.nameEffects && user.nameEffects.mode) {
-      cfg = user.nameEffects;
-    } else if (Array.isArray(user.nameGradient) && user.nameGradient.length === 2) {
+    if (user.nameEffects && user.nameEffects.mode) cfg = user.nameEffects;
+    else if (Array.isArray(user.nameGradient) && user.nameGradient.length === 2) {
       cfg = { mode: 'gradient', c1: user.nameGradient[0], c2: user.nameGradient[1], c3: user.nameGradient[1] };
     } else if (user.nameColor) {
       cfg = { mode: 'solid', value: user.nameColor };
     }
 
-    /* 1) جرّب UI أولاً (signature: mode/value/c1/c2/c3) */
-    if (cfg && UI && typeof UI.apply === 'function') {
-      try { UI.apply(el, cfg); return; } catch (e) {}
+    /* 6) طبّق UI إن وُجد */
+    if (cfg) {
+      var UI = P('QamarNameEffectsUI');
+      if (UI && typeof UI.apply === 'function') {
+        try { UI.apply(el, cfg); return; } catch (e) {}
+      }
+      var CHAT = P('QamarNameEffects');
+      if (CHAT && typeof CHAT.apply === 'function') {
+        try { CHAT.apply(el, user); return; } catch (e) {}
+      }
+      el.style.color = (cfg.mode === 'solid' ? cfg.value : '#fff');
+      return;
     }
 
-    /* 2) fallback: chat-effects (signature: user object) */
-    if (CHAT && typeof CHAT.apply === 'function') {
-      try { CHAT.apply(el, user); return; } catch (e) {}
-    }
-
-    /* 3) fallback نهائي */
-    el.style.color = user.nameColor || user.color || '#fff';
+    /* 7) افتراضي */
+    el.style.color = user.color || '#fff';
   }
 
   function applyFrame(user) {
@@ -487,15 +506,23 @@
     var fb = FB();
     if (!fb || typeof fb.onValue !== 'function') return;
     stopLive();
+
+    /* Firebase users — debounced 400ms */
     try {
       var h = fb.onValue('users/' + uid, function (v) {
         if (!v || typeof v !== 'object') return;
         v.uid = uid;
         S.subject = Object.assign({}, S.subject, v);
-        apply(S.subject);
+        if (_liveTimer) clearTimeout(_liveTimer);
+        _liveTimer = setTimeout(function () {
+          _liveTimer = null;
+          apply(S.subject);
+        }, 400);
       }, function () {});
       S.liveUnsubs.push(function () { try { h.off(); } catch (e) {} });
     } catch (e) {}
+
+    /* presence — debounced 400ms */
     try {
       var hp = fb.onValue('user_presence/' + uid, function (p) {
         S.presence = p || {};
@@ -504,12 +531,17 @@
           if (S.presence.state === 'online' && (Date.now() - (S.presence.lastChanged || 0)) < 120000) dot.classList.add('online');
           else dot.classList.remove('online');
         }
-        renderInfo(S.subject);
+        if (_liveTimer) clearTimeout(_liveTimer);
+        _liveTimer = setTimeout(function () {
+          _liveTimer = null;
+          renderInfo(S.subject);
+        }, 400);
       }, function () {});
       S.liveUnsubs.push(function () { try { hp.off(); } catch (e) {} });
     } catch (e) {}
   }
   function stopLive() {
+    if (_liveTimer) { clearTimeout(_liveTimer); _liveTimer = null; }
     S.liveUnsubs.forEach(function (fn) { try { fn(); } catch (e) {} });
     S.liveUnsubs = [];
   }
@@ -613,16 +645,12 @@
 
     var A = window.QamarProfileActions || (window.parent && window.parent.QamarProfileActions);
     if (A && typeof A.bind === 'function') {
-      try { A.bind(S); console.log('[profile-core] actions bound'); }
+      try { A.bind(S); }
       catch (e) { console.warn('actions bind failed:', e); }
-    } else {
-      console.warn('[profile-core] QamarProfileActions not found!');
     }
 
     var c = $id('profile-container');
     if (c) c.style.opacity = '1';
-
-    console.log('[profile-core] mode=' + S.mode + ' uid=' + S.uid + ' preview=' + previewParam);
   }
 
   window.QamarProfileCore = {
@@ -637,5 +665,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else setTimeout(boot, 50);
 
-  console.log('[profile-core] ready');
+  console.log('[profile-core] v4 ready');
 })();
