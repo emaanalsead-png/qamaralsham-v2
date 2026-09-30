@@ -495,13 +495,17 @@
   async function boot() {
     var urlUid = /[?&]uid=([^&]+)/.test(location.search) ? decodeURIComponent(location.search.match(/[?&]uid=([^&]+)/)[1]) : null;
     var ownerParam = /[?&]owner=1/.test(location.search);
+    var previewParam = /[?&]preview=1/.test(location.search);
 
     S.me = getMe();
-
-    // ⭐ الحل: auto-detect owner
     var isMe = (S.me && S.me.uid && urlUid === S.me.uid);
 
-    if ((!urlUid && S.me) || ownerParam || isMe) {
+    // Preview يتخطى owner mode (للمعاينة كزائر)
+    if (previewParam && S.me) {
+      S.mode = 'visitor';
+      S.uid = S.me.uid;
+      S.subject = Object.assign({}, S.me);
+    } else if ((!urlUid && S.me) || ownerParam || isMe) {
       if (!S.me || !S.me.uid) {
         document.body.innerHTML = '<div style="padding:40px;text-align:center;color:#fff;font-family:Cairo">⚠️ لا يوجد مستخدم</div>';
         return;
@@ -519,7 +523,6 @@
       return;
     }
 
-    // ⭐ طبّق class
     document.body.className = (S.mode === 'owner') ? 'owner-mode' : 'visitor-mode';
 
     var fresh = await fetchUser(S.uid);
@@ -527,8 +530,7 @@
     if (!S.subject.name) S.subject.name = 'مستخدم';
     if (!S.subject.uid) S.subject.uid = S.uid;
 
-    // سجّل زائر
-    if (S.mode === 'visitor' && S.me && S.me.uid !== S.uid) {
+    if (S.mode === 'visitor' && !previewParam && S.me && S.me.uid !== S.uid) {
       var fb = FB();
       if (fb && typeof fb.set === 'function') {
         try {
@@ -542,7 +544,7 @@
     if (S.mode === 'owner') {
       var vs = $id('visitors-section'); if (vs) vs.style.display = '';
     }
-    if (S.isAdmin && S.mode === 'visitor') {
+    if (S.isAdmin && S.mode === 'visitor' && !previewParam) {
       var ab = $id('btn-admin-actions'); if (ab) ab.style.display = 'flex';
     }
 
@@ -553,15 +555,19 @@
     if (S.mode === 'owner') renderVisitors();
     startLive(S.uid);
 
-    var A = P('QamarProfileActions');
+    // ⭐ الإصلاح: ابحث في window (نفس iframe) بدل parent
+    var A = window.QamarProfileActions || (window.parent && window.parent.QamarProfileActions);
     if (A && typeof A.bind === 'function') {
-      try { A.bind(S); } catch (e) { console.warn('actions bind failed:', e); }
+      try { A.bind(S); console.log('[profile-core] actions bound'); }
+      catch (e) { console.warn('actions bind failed:', e); }
+    } else {
+      console.warn('[profile-core] QamarProfileActions not found!');
     }
 
     var c = $id('profile-container');
     if (c) c.style.opacity = '1';
 
-    console.log('[profile-core] mode=' + S.mode + ' uid=' + S.uid);
+    console.log('[profile-core] mode=' + S.mode + ' uid=' + S.uid + ' preview=' + previewParam);
   }
 
   window.QamarProfileCore = {
