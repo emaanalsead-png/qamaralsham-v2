@@ -1,12 +1,12 @@
 /* ============================================================
    🌙 قمر الشام — effects/name-effects-ui.js
-   Version: 1.0
+   Version: 1.1 — إصلاح تصادم QamarNameEffects
    ============================================================ */
 (function () {
   'use strict';
-  if (window.QamarNameEffects) return;
+  if (window.QamarNameEffectsUI) return;
 
-  var VERSION = '1.0';
+  var VERSION = '1.1';
   var St = { inited: false, currentUid: null };
 
   var SOLID_COLORS = [
@@ -30,7 +30,7 @@
     { id: 'multicolor',       name: 'متعدد',      c1: '#ff0066', c2: '#a855f7', c3: '#00f3ff' },
     { id: 'hue-rotate',       name: 'تدوير',      c1: '#ff6b35', c2: '#a855f7', c3: '#06b6d4' },
     { id: 'diagonal-flow',    name: 'انسيابي',    c1: '#ff0080', c2: '#7928ca', c3: '#00d4ff' },
-    { id: 'silk',             name: 'حرير',      c1: '#e0ffff', c2: '#a855f7', c3: '#ff69b4' }
+    { id: 'silk',             name: 'حرير',       c1: '#e0ffff', c2: '#a855f7', c3: '#ff69b4' }
   ];
 
   var GLOWS = [
@@ -252,6 +252,11 @@
     div.className = 'qne-sec';
     div.style.marginBottom = '14px';
 
+    var secId = title === 'لون ثابت' ? 'solid' :
+                title === 'تدرجات متحركة' ? 'gradient' :
+                title === 'توهج' ? 'glow' :
+                title === 'تحويلات' ? 'transform' : 'scene';
+
     var html = '<div style="font-size:12px;font-weight:900;color:#9ca3af;' +
       'margin-bottom:8px;padding:0 4px">' + title + '</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));' +
@@ -265,10 +270,7 @@
     });
     html += '</div>';
     div.innerHTML = html;
-    div.setAttribute('data-sec', title === 'لون ثابت' ? 'solid' :
-                                  title === 'تدرجات متحركة' ? 'gradient' :
-                                  title === 'توهج' ? 'glow' :
-                                  title === 'تحويلات' ? 'transform' : 'scene');
+    div.setAttribute('data-sec', secId);
     return div;
   }
 
@@ -286,7 +288,7 @@
     console.log('[name-effects-ui] v' + VERSION + ' ready');
   }
 
-  window.QamarNameEffects = {
+  window.QamarNameEffectsUI = {
     version: VERSION,
     open: buildUI,
     apply: apply,
