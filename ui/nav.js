@@ -1,5 +1,5 @@
 // ==============================================
-// ui/nav.js v2.2 — profile iframe + postMessage
+// ui/nav.js v2.3 — openUserProfile global + iframe postMessage
 // ==============================================
 
 (function () {
@@ -814,7 +814,7 @@
         }
 
         State._initialized = true;
-        Logger.info('📦 [nav.js v2.2] initialized');
+        Logger.info('📦 [nav.js v2.3] initialized');
         return true;
     }
 
@@ -852,6 +852,23 @@
     }
 
     /* ══════════════════════════════════════════════ */
+    /* ⭐ دوال عالمية — يحل مشكلة 404 من الشات         */
+    /* ══════════════════════════════════════════════ */
+    window.openUserProfile = function (uid, name) {
+        if (!uid) return;
+        openProfile(uid, name || '');
+    };
+
+    window.openProfile = function (uid, name) {
+        openProfile(uid, name || '');
+    };
+
+    window.openPrivateChatWith = function (uid, name, avatar) {
+        if (!uid) return;
+        _openPM(uid);
+    };
+
+    /* ══════════════════════════════════════════════ */
     /* Exports                                         */
     /* ══════════════════════════════════════════════ */
     window.QamarNav = {
@@ -876,5 +893,5 @@
         }
     };
 
-    Logger.info('📦 [nav.js v2.2] loaded — postMessage ready');
+    Logger.info('📦 [nav.js v2.3] loaded — openUserProfile global');
 })();
