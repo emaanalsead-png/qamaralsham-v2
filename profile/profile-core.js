@@ -477,13 +477,29 @@
   }
 
   function getMe() {
-    var Sess = P('QamarSession');
-    if (Sess && typeof Sess.getData === 'function') {
-      try { var d = Sess.getData(); if (d && d.uid) return d; } catch (e) {}
-    }
     var Auth = P('QamarAuth');
-    if (Auth && typeof Auth.getCurrentUser === 'function') {
-      try { var u = Auth.getCurrentUser(); if (u && u.uid) return { uid: u.uid, name: u.displayName || null }; } catch (e) {}
+    if (Auth && typeof Auth.getUid === 'function') {
+      try {
+        var uid = Auth.getUid();
+        if (uid) {
+          var me = { uid: uid };
+          var Sess = P('QamarSession');
+          if (Sess && typeof Sess.getData === 'function') {
+            try {
+              var d = Sess.getData();
+              if (d && d.uid === uid) Object.assign(me, d);
+            } catch (e) {}
+          }
+          if (!me.name && typeof Auth.getDisplayName === 'function') {
+            try { me.name = Auth.getDisplayName(); } catch (e) {}
+          }
+          return me;
+        }
+      } catch (e) {}
+    }
+    var Sess2 = P('QamarSession');
+    if (Sess2 && typeof Sess2.getData === 'function') {
+      try { var d2 = Sess2.getData(); if (d2 && d2.uid) return d2; } catch (e) {}
     }
     try {
       var raw = localStorage.getItem('qamar_current_user') || localStorage.getItem('qamar_user');
@@ -500,11 +516,11 @@
     S.me = getMe();
     var isMe = (S.me && S.me.uid && urlUid === S.me.uid);
 
-    // Preview يتخطى owner mode (للمعاينة كزائر)
     if (previewParam && S.me) {
       S.mode = 'visitor';
       S.uid = S.me.uid;
       S.subject = Object.assign({}, S.me);
+      S.isAdmin = rankLevel(S.me.rank) >= 65;
     } else if ((!urlUid && S.me) || ownerParam || isMe) {
       if (!S.me || !S.me.uid) {
         document.body.innerHTML = '<div style="padding:40px;text-align:center;color:#fff;font-family:Cairo">⚠️ لا يوجد مستخدم</div>';
@@ -555,7 +571,6 @@
     if (S.mode === 'owner') renderVisitors();
     startLive(S.uid);
 
-    // ⭐ الإصلاح: ابحث في window (نفس iframe) بدل parent
     var A = window.QamarProfileActions || (window.parent && window.parent.QamarProfileActions);
     if (A && typeof A.bind === 'function') {
       try { A.bind(S); console.log('[profile-core] actions bound'); }
