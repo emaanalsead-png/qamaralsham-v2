@@ -333,7 +333,7 @@
     });
   }
 
-  /* ═══ Visitor buttons ═══ */
+  /* ═══ Visitor ═══ */
   function bindVisitor() {
     var heart = $id('btn-heart');
     if (heart && !heart.__b) {
@@ -385,21 +385,17 @@
                 Promise.all([
                   fb.remove('users/' + S.me.uid + '/friends/' + S.uid),
                   fb.remove('users/' + S.uid + '/friends/' + S.me.uid)
-                ]).then(function () {
-                  friend.textContent = '➕'; toast('✅ تمت الإزالة');
-                });
+                ]).then(function () { friend.textContent = '➕'; toast('✅ تمت الإزالة'); });
               } else if (r1.exists()) {
                 fb.remove('users/' + S.me.uid + '/friend_requests/' + S.uid).then(function () {
                   friend.textContent = '➕'; toast('أُلغي الطلب');
                 });
               } else if (r2.exists()) {
                 Promise.all([
-                  fb.set('users/' + S.uid + '/friends/' + S.me.uid, { status: 'accepted', time: Date.now(), name: S.me.name, avatar: S.me.avatar || '' }),
-                  fb.set('users/' + S.me.uid + '/friends/' + S.uid, { status: 'accepted', time: Date.now(), name: S.subject.name, avatar: S.subject.avatar || '' }),
+                  fb.set('users/' + S.uid + '/friends/' + S.me.uid, { status: 'accepted', time: Date.now() }),
+                  fb.set('users/' + S.me.uid + '/friends/' + S.uid, { status: 'accepted', time: Date.now() }),
                   fb.remove('users/' + S.uid + '/friend_requests/' + S.me.uid)
-                ]).then(function () {
-                  friend.textContent = '✅'; toast('✅ تمت الصداقة');
-                });
+                ]).then(function () { friend.textContent = '✅'; toast('✅ تمت الصداقة'); });
               } else {
                 fb.set('users/' + S.me.uid + '/friend_requests/' + S.uid, {
                   time: Date.now(), name: S.me.name || 'زائر', avatar: S.me.avatar || ''
@@ -475,7 +471,7 @@
     }).catch(function () {});
   }
 
-  /* ═══ Owner buttons ═══ */
+  /* ═══ Owner ═══ */
   function bindDanger() {
     var lo = $id('btn-logout');
     if (lo && !lo.__b) {
@@ -518,7 +514,9 @@
     var ne = $id('btn-edit-username');
     if (ne && !ne.__b) {
       ne.__b = true;
-      ne.onclick = function () {
+      ne.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
         openModal({
           title: '✏️ تعديل الاسم', type: 'input',
           value: S.subject.name || '', maxLength: 35,
@@ -533,7 +531,9 @@
     var be = $id('btn-edit-bio');
     if (be && !be.__b) {
       be.__b = true;
-      be.onclick = function () {
+      be.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
         openModal({
           title: '✏️ تعديل البايو', type: 'input',
           value: S.subject.bio || '', maxLength: 120,
@@ -577,12 +577,18 @@
     document.querySelectorAll('[data-open-page]').forEach(function (b) {
       if (b.__navb) return;
       b.__navb = true;
-      b.onclick = function () { showPage(b.getAttribute('data-open-page')); };
+      b.onclick = function (e) {
+        e.preventDefault();
+        showPage(b.getAttribute('data-open-page'));
+      };
     });
     document.querySelectorAll('[data-back]').forEach(function (b) {
       if (b.__backb) return;
       b.__backb = true;
-      b.onclick = back;
+      b.onclick = function (e) {
+        e.preventDefault();
+        back();
+      };
     });
   }
 
@@ -590,16 +596,33 @@
     var c = $id('btn-close');
     if (c && !c.__b) {
       c.__b = true;
-      c.onclick = function () {
-        try { if (window.parent && window.parent !== window) window.parent.postMessage({ action: 'closeProfile' }, '*'); }
-        catch (e) {}
+      c.onclick = function (e) {
+        e.preventDefault();
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ action: 'closeProfile' }, '*');
+          }
+        } catch (err) {}
       };
     }
+
+    // ⭐ زر المعاينة — يحوّل من owner إلى visitor view
     var col = $id('btn-collapse-info');
     if (col && !col.__b) {
       col.__b = true;
-      col.onclick = function () { document.body.classList.toggle('visitor-collapsed'); };
+      col.onclick = function (e) {
+        e.preventDefault();
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+              action: 'openProfileAsVisitor',
+              uid: S.uid
+            }, '*');
+          }
+        } catch (err) {}
+      };
     }
+
     var u = $id('profile-username');
     if (u && !u.__b) {
       u.__b = true;
@@ -612,14 +635,14 @@
     }
   }
 
-  /* ═══ Main bind — يفرّق بين الوضعين ═══ */
   function bind(state) {
     var isOwner = (state && state.mode === 'owner');
+    var isPreview = /[?&]preview=1/.test(location.search);
 
     bindChrome();
     bindSettingsNav();
 
-    if (isOwner) {
+    if (isOwner && !isPreview) {
       bindUploads();
       bindEdit();
       bindDanger();
@@ -627,7 +650,7 @@
       bindVisitor();
     }
 
-    console.log('[profile-actions] bound | mode=' + (isOwner ? 'owner' : 'visitor'));
+    console.log('[profile-actions] bound | mode=' + (isOwner ? 'owner' : 'visitor') + ' | preview=' + isPreview);
   }
 
   window.QamarProfileActions = {
