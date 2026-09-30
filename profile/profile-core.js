@@ -1,4 +1,4 @@
-/* profile-core.js — v2.1 (fixed name effects + CSS injection) */
+/* profile-core.js — v3 (fx CSS injection + UI namespace) */
 (function () {
   'use strict';
 
@@ -73,6 +73,31 @@
   }
   function FB() { return P('QamarFB'); }
 
+  /* ═══ حقن CSS من الأب داخل الـ iframe ═══ */
+  function _injectFxCSS(retries) {
+    if (document.getElementById('fx-styles-iframe')) return;
+    retries = retries || 0;
+    var combined = '';
+    try {
+      var pdoc = window.parent.document;
+      ['qamar-fx-styles', 'qne-style'].forEach(function (id) {
+        var st = pdoc.getElementById(id);
+        if (st && st.textContent) combined += st.textContent + '\n';
+      });
+    } catch (e) {}
+    if (combined) {
+      var s = document.createElement('style');
+      s.id = 'fx-styles-iframe';
+      s.textContent = combined;
+      document.head.appendChild(s);
+      console.log('[profile-core] fx CSS injected | bytes=' + combined.length);
+      return;
+    }
+    if (retries < 12) {
+      setTimeout(function () { _injectFxCSS(retries + 1); }, 250);
+    }
+  }
+
   function fetchUser(uid) {
     var fb = FB();
     if (!fb || typeof fb.get !== 'function') return Promise.resolve(null);
@@ -93,74 +118,42 @@
     } catch (e) { return Promise.resolve(0); }
   }
 
-  /* ⭐ v2.1: حقن CSS التأثيرات داخل الـ iframe */
-  function _injectEffectsCSS() {
-    if (document.getElementById('fx-css-iframe')) return;
-    var s = document.createElement('style');
-    s.id = 'fx-css-iframe';
-    s.textContent =
-      '.qne-shimmer{background-size:200% 100%;-webkit-background-clip:text;' +
-        'background-clip:text;-webkit-text-fill-color:transparent;' +
-        'animation:qneShimmer 3s linear infinite}' +
-      '@keyframes qneShimmer{0%{background-position:0% 50%}100%{background-position:200% 50%}}' +
-      '.qne-glow{filter:brightness(1.2)}' +
-      '.qne-glow-neon{text-shadow:0 0 4px currentColor,0 0 8px currentColor,0 0 16px currentColor}' +
-      '.qne-glow-flicker{animation:qneFlicker 1.5s infinite}' +
-      '@keyframes qneFlicker{0%,100%{opacity:1}45%{opacity:.6}50%{opacity:.3}55%{opacity:.6}}' +
-      '.qne-glow-breathe{animation:qneBreathe 3s ease-in-out infinite}' +
-      '@keyframes qneBreathe{0%,100%{filter:brightness(1)}50%{filter:brightness(1.6)}}' +
-      '.qne-tx-breathe{animation:qneBreathe 3s ease-in-out infinite}' +
-      '.qne-tx-wave{animation:qneWave 3s ease-in-out infinite}' +
-      '@keyframes qneWave{0%,100%{transform:skewX(0)}25%{transform:skewX(10deg)}75%{transform:skewX(-10deg)}}' +
-      '.qne-tx-tilt{animation:qneTilt 3s ease-in-out infinite}' +
-      '@keyframes qneTilt{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}' +
-      '.qne-tx-spin{animation:qneSpin 6s linear infinite;display:inline-block}' +
-      '@keyframes qneSpin{to{transform:rotate(360deg)}}';
-    document.head.appendChild(s);
-    console.log('[profile-core] ✨ Effects CSS injected into iframe');
-  }
-
-  /* ⭐ v2.1: تحديث الدالة لاستخدام QamarNameEffectsUI */
   function applyNameEffects(el, user) {
     if (!el) return;
-    var NM = P('QamarNameEffectsUI');
+    var UI = P('QamarNameEffectsUI');
+    var CHAT = P('QamarNameEffects');
+
+    /* تنظيف كامل */
     el.style.color = '';
     el.style.background = '';
     el.style.backgroundImage = '';
     el.style.webkitTextFillColor = '';
     el.style.textShadow = '';
-    el.classList.remove('shimmer', 'qne-shimmer', 'qne-glow',
-      'qne-glow-neon', 'qne-glow-flicker', 'qne-glow-breathe',
-      'qne-tx-breathe', 'qne-tx-wave', 'qne-tx-tilt', 'qne-tx-spin');
+    el.classList.remove('qne-shimmer', 'qne-glow', 'qne-glow-neon', 'qne-glow-flicker',
+      'qne-glow-breathe', 'qne-tx-breathe', 'qne-tx-wave', 'qne-tx-tilt', 'qne-tx-spin');
 
-    if (!NM || typeof NM.apply !== 'function') {
-      // Fallback: inline style فقط
-      var fbColor = user.nameColor || user.color || '#fff';
-      el.style.color = fbColor;
-      return;
-    }
-
+    /* بناء cfg بالصيغة الجديدة (mode/value/c1/c2/c3) */
     var cfg = null;
     if (user.nameEffects && user.nameEffects.mode) {
       cfg = user.nameEffects;
     } else if (Array.isArray(user.nameGradient) && user.nameGradient.length === 2) {
-      cfg = {
-        mode: 'gradient',
-        c1: user.nameGradient[0],
-        c2: user.nameGradient[1],
-        c3: user.nameGradient[1]
-      };
+      cfg = { mode: 'gradient', c1: user.nameGradient[0], c2: user.nameGradient[1], c3: user.nameGradient[1] };
     } else if (user.nameColor) {
       cfg = { mode: 'solid', value: user.nameColor };
-    } else {
-      el.style.color = user.color || '#ffd700';
-      return;
     }
-    try { NM.apply(el, cfg); }
-    catch (e) {
-      console.warn('applyNameEffects failed:', e);
-      el.style.color = user.color || user.nameColor || '#fff';
+
+    /* 1) جرّب UI أولاً (signature: mode/value/c1/c2/c3) */
+    if (cfg && UI && typeof UI.apply === 'function') {
+      try { UI.apply(el, cfg); return; } catch (e) {}
     }
+
+    /* 2) fallback: chat-effects (signature: user object) */
+    if (CHAT && typeof CHAT.apply === 'function') {
+      try { CHAT.apply(el, user); return; } catch (e) {}
+    }
+
+    /* 3) fallback نهائي */
+    el.style.color = user.nameColor || user.color || '#fff';
   }
 
   function applyFrame(user) {
@@ -168,9 +161,7 @@
     var FR = P('QamarFrames');
     if (!av || !FR) return;
     var frame = user.avatarFrame;
-    if (!frame && typeof FR.defaultForRank === 'function') {
-      frame = FR.defaultForRank(rankLevel(user.rank));
-    }
+    if (!frame && typeof FR.defaultForRank === 'function') frame = FR.defaultForRank(rankLevel(user.rank));
     if (!frame) return;
     try { FR.apply(av, frame); } catch (e) {}
   }
@@ -206,9 +197,8 @@
     layer.style.backgroundImage = '';
     layer.style.background = '';
     if (!user.profileBgType || !user.profileBgValue) return;
-    if (user.profileBgType === 'color') {
-      layer.style.background = user.profileBgValue;
-    } else if (user.profileBgType === 'image') {
+    if (user.profileBgType === 'color') layer.style.background = user.profileBgValue;
+    else if (user.profileBgType === 'image') {
       layer.style.backgroundImage = 'url("' + user.profileBgValue + '")';
       layer.style.backgroundSize = 'cover';
       layer.style.backgroundPosition = 'center';
@@ -230,9 +220,7 @@
   function renderAvatar(user) {
     var img = $id('profile-avatar-img');
     if (!img) return;
-    img.src = user.avatar || ('https://ui-avatars.com/api/?name=' +
-      encodeURIComponent(user.name || 'U') +
-      '&background=1a1a2e&color=d4af37&size=200&bold=true');
+    img.src = user.avatar || ('https://ui-avatars.com/api/?name=' + encodeURIComponent(user.name || 'U') + '&background=1a1a2e&color=d4af37&size=200&bold=true');
   }
 
   function renderInfo(user) {
@@ -288,16 +276,12 @@
       }).catch(function () {});
       fb.get('users/' + uid + '/friends').then(function (s) {
         var v = s || {};
-        var n = Object.keys(v).filter(function (k) {
-          return v[k] && v[k].status === 'accepted';
-        }).length;
+        var n = Object.keys(v).filter(function (k) { return v[k] && v[k].status === 'accepted'; }).length;
         var el = $id('stat-friends'); if (el) el.textContent = n;
       }).catch(function () {});
     }
-    var el = $id('stat-achievements');
-    if (el) el.textContent = Math.floor((points || 0) / 100);
-    var eg = $id('stat-gifts');
-    if (eg) eg.textContent = '0';
+    var el = $id('stat-achievements'); if (el) el.textContent = Math.floor((points || 0) / 100);
+    var eg = $id('stat-gifts'); if (eg) eg.textContent = '0';
   }
 
   function renderPoetry(user) {
@@ -305,18 +289,12 @@
     if (!sec) return;
     if (!user.poetry && !user.poetryAttachment) { sec.classList.add('empty'); return; }
     sec.classList.remove('empty');
-    var t = $id('poetry-display');
-    if (t) t.textContent = user.poetry || '';
-    var a = $id('poetry-author');
-    if (a) a.textContent = user.poetry ? ('— ' + (user.name || '')) : '';
+    var t = $id('poetry-display'); if (t) t.textContent = user.poetry || '';
+    var a = $id('poetry-author'); if (a) a.textContent = user.poetry ? ('— ' + (user.name || '')) : '';
     var att = $id('poetry-attachment');
     if (att) {
-      if (user.poetryAttachment) {
-        att.src = user.poetryAttachment;
-        att.style.display = 'block';
-      } else {
-        att.style.display = 'none';
-      }
+      if (user.poetryAttachment) { att.src = user.poetryAttachment; att.style.display = 'block'; }
+      else att.style.display = 'none';
     }
     if (user.poetryBg) {
       sec.style.backgroundImage = 'url("' + user.poetryBg + '")';
@@ -336,11 +314,8 @@
     h += '<button class="tab active" data-tab="home"><i class="fas fa-home"></i><span>الرئيسية</span></button>';
     h += '<button class="tab" data-tab="moments"><i class="fas fa-camera"></i><span>لحظات</span></button>';
     h += '<button class="tab" data-tab="friends"><i class="fas fa-users"></i><span>أصدقاء</span></button>';
-    if (isOwner) {
-      h += '<button class="tab" data-tab="settings"><i class="fas fa-cog"></i><span>إعدادات</span></button>';
-    } else if (S.isAdmin) {
-      h += '<button class="tab" data-tab="admin"><i class="fas fa-crosshairs"></i><span>أوامر</span></button>';
-    }
+    if (isOwner) h += '<button class="tab" data-tab="settings"><i class="fas fa-cog"></i><span>إعدادات</span></button>';
+    else if (S.isAdmin) h += '<button class="tab" data-tab="admin"><i class="fas fa-crosshairs"></i><span>أوامر</span></button>';
     tabs.innerHTML = h;
     tabs.querySelectorAll('.tab').forEach(function (b) {
       b.onclick = function () { switchTab(b.dataset.tab); };
@@ -348,14 +323,9 @@
   }
 
   function switchTab(name) {
-    document.querySelectorAll('.tab').forEach(function (t) {
-      t.classList.toggle('active', t.dataset.tab === name);
-    });
-    document.querySelectorAll('.tab-content').forEach(function (c) {
-      c.classList.toggle('active', c.dataset.content === name);
-    });
-    var s = $id('scroll-box');
-    if (s) s.scrollTop = 0;
+    document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === name); });
+    document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.toggle('active', c.dataset.content === name); });
+    var s = $id('scroll-box'); if (s) s.scrollTop = 0;
     if (name === 'friends') renderFriends();
     if (name === 'moments') renderMoments();
   }
@@ -368,11 +338,8 @@
     el.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:20px;font-size:12px">⏳ تحميل...</div>';
     fb.get('users/' + S.subject.uid + '/friends').then(function (data) {
       var v = data || {};
-      var list = Object.keys(v).filter(function (k) {
-        return v[k] && (v[k].status === 'accepted' || !v[k].status);
-      }).map(function (k) {
-        return { uid: k, name: v[k].name || 'مجهول', avatar: v[k].avatar || '' };
-      });
+      var list = Object.keys(v).filter(function (k) { return v[k] && (v[k].status === 'accepted' || !v[k].status); })
+        .map(function (k) { return { uid: k, name: v[k].name || 'مجهول', avatar: v[k].avatar || '' }; });
       if (!list.length) {
         el.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:20px;font-size:12px">لا يوجد أصدقاء</div>';
         return;
@@ -414,8 +381,7 @@
         var prev = st.text ? st.text.substring(0, 20) : ic;
         var tile = document.createElement('div');
         tile.className = 'moment-tile';
-        tile.innerHTML = '<div class="moment-tile-icon">' + ic + '</div>' +
-          '<div class="moment-tile-name">' + esc(prev) + '</div>';
+        tile.innerHTML = '<div class="moment-tile-icon">' + ic + '</div><div class="moment-tile-name">' + esc(prev) + '</div>';
         el.appendChild(tile);
       });
     }).catch(function () {
@@ -460,14 +426,9 @@
     function fallback() {
       try {
         var ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        done();
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta); done();
       } catch (e) {}
     }
   }
@@ -476,8 +437,7 @@
     if (!uid) return;
     try {
       if (window.parent && typeof window.parent.openUserProfile === 'function') {
-        window.parent.openUserProfile(uid, name || '');
-        return;
+        window.parent.openUserProfile(uid, name || ''); return;
       }
     } catch (e) {}
     location.href = location.pathname + '?uid=' + encodeURIComponent(uid);
@@ -489,10 +449,7 @@
     if (!mini || !audio) return;
     if (!user.musicURL || S.mode === 'owner') { mini.style.display = 'none'; return; }
     mini.style.display = 'flex';
-    if (audio.src !== user.musicURL) {
-      audio.src = user.musicURL;
-      audio.load();
-    }
+    if (audio.src !== user.musicURL) { audio.src = user.musicURL; audio.load(); }
     if (mini.__b) return;
     mini.__b = true;
     mini.onclick = function () {
@@ -544,12 +501,8 @@
         S.presence = p || {};
         var dot = $id('status-dot');
         if (dot) {
-          if (S.presence.state === 'online' &&
-              (Date.now() - (S.presence.lastChanged || 0)) < 120000) {
-            dot.classList.add('online');
-          } else {
-            dot.classList.remove('online');
-          }
+          if (S.presence.state === 'online' && (Date.now() - (S.presence.lastChanged || 0)) < 120000) dot.classList.add('online');
+          else dot.classList.remove('online');
         }
         renderInfo(S.subject);
       }, function () {});
@@ -584,10 +537,7 @@
     }
     var Sess2 = P('QamarSession');
     if (Sess2 && typeof Sess2.getData === 'function') {
-      try {
-        var d2 = Sess2.getData();
-        if (d2 && d2.uid) return d2;
-      } catch (e) {}
+      try { var d2 = Sess2.getData(); if (d2 && d2.uid) return d2; } catch (e) {}
     }
     try {
       var raw = localStorage.getItem('qamar_current_user') || localStorage.getItem('qamar_user');
@@ -597,9 +547,9 @@
   }
 
   async function boot() {
-    var urlUid = /[?&]uid=([^&]+)/.test(location.search)
-      ? decodeURIComponent(location.search.match(/[?&]uid=([^&]+)/)[1])
-      : null;
+    _injectFxCSS();
+
+    var urlUid = /[?&]uid=([^&]+)/.test(location.search) ? decodeURIComponent(location.search.match(/[?&]uid=([^&]+)/)[1]) : null;
     var ownerParam = /[?&]owner=1/.test(location.search);
     var previewParam = /[?&]preview=1/.test(location.search);
 
@@ -641,21 +591,17 @@
       if (fb && typeof fb.set === 'function') {
         try {
           fb.set('users/' + S.uid + '/visitors/' + S.me.uid, {
-            time: Date.now(),
-            name: S.me.name || 'زائر',
-            avatar: S.me.avatar || ''
+            time: Date.now(), name: S.me.name || 'زائر', avatar: S.me.avatar || ''
           }).catch(function () {});
         } catch (e) {}
       }
     }
 
     if (S.mode === 'owner') {
-      var vs = $id('visitors-section');
-      if (vs) vs.style.display = '';
+      var vs = $id('visitors-section'); if (vs) vs.style.display = '';
     }
     if (S.isAdmin && S.mode === 'visitor' && !previewParam) {
-      var ab = $id('btn-admin-actions');
-      if (ab) ab.style.display = 'flex';
+      var ab = $id('btn-admin-actions'); if (ab) ab.style.display = 'flex';
     }
 
     renderTabs();
@@ -665,24 +611,16 @@
     if (S.mode === 'owner') renderVisitors();
     startLive(S.uid);
 
-    var A = window.QamarProfileActions ||
-            (window.parent && window.parent.QamarProfileActions);
+    var A = window.QamarProfileActions || (window.parent && window.parent.QamarProfileActions);
     if (A && typeof A.bind === 'function') {
-      try {
-        A.bind(S);
-        console.log('[profile-core] actions bound');
-      } catch (e) {
-        console.warn('actions bind failed:', e);
-      }
+      try { A.bind(S); console.log('[profile-core] actions bound'); }
+      catch (e) { console.warn('actions bind failed:', e); }
     } else {
       console.warn('[profile-core] QamarProfileActions not found!');
     }
 
     var c = $id('profile-container');
     if (c) c.style.opacity = '1';
-
-    /* ⭐ v2.1: حقن CSS التأثيرات داخل الـ iframe */
-    _injectEffectsCSS();
 
     console.log('[profile-core] mode=' + S.mode + ' uid=' + S.uid + ' preview=' + previewParam);
   }
@@ -693,14 +631,11 @@
     toast: toast, copyText: copyText, openUser: openUser,
     apply: apply, renderInfo: renderInfo, switchTab: switchTab,
     FB: FB, fetchUser: fetchUser, getMe: getMe,
-    injectEffectsCSS: _injectEffectsCSS
+    injectFxCSS: _injectFxCSS
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
-  } else {
-    setTimeout(boot, 50);
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else setTimeout(boot, 50);
 
-  console.log('[profile-core] v2.1 ready');
+  console.log('[profile-core] ready');
 })();
