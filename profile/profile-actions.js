@@ -593,6 +593,7 @@
   }
 
   function bindChrome() {
+    // زر الإغلاق (يمين)
     var c = $id('btn-close');
     if (c && !c.__b) {
       c.__b = true;
@@ -602,24 +603,28 @@
           if (window.parent && window.parent !== window) {
             window.parent.postMessage({ action: 'closeProfile' }, '*');
           }
+          // fallback لو postMessage فشل
+          setTimeout(function () {
+            var f = window.parent && window.parent.document && window.parent.document.getElementById('profile-frame-container');
+            if (f) f.classList.add('hidden');
+          }, 100);
         } catch (err) {}
       };
     }
 
-    // ⭐ زر المعاينة — يحوّل من owner إلى visitor view
+    // زر المعاينة/الطي (يسار)
     var col = $id('btn-collapse-info');
     if (col && !col.__b) {
       col.__b = true;
       col.onclick = function (e) {
         e.preventDefault();
-        try {
-          if (window.parent && window.parent !== window) {
-            window.parent.postMessage({
-              action: 'openProfileAsVisitor',
-              uid: S.uid
-            }, '*');
-          }
-        } catch (err) {}
+        if (S.mode === 'owner') {
+          // معاينة كزائر — إعادة تحميل iframe مع preview=1
+          location.href = location.pathname + '?uid=' + encodeURIComponent(S.uid) + '&preview=1';
+        } else {
+          // طي المعلومات (visitor mode)
+          document.body.classList.toggle('visitor-collapsed');
+        }
       };
     }
 
