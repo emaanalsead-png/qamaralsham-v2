@@ -1,4 +1,4 @@
-/* profile-actions.js */
+/* profile-actions.js — v1.1 (fixed window vs window.parent) */
 (function () {
   'use strict';
 
@@ -592,7 +592,6 @@
     });
   }
 
-  /* ⭐ v3: toggle بدل إعادة تحميل */
   function bindChrome() {
     var c = $id('btn-close');
     if (c && !c.__b) {
@@ -607,7 +606,6 @@
       };
     }
 
-    // ⭐ زر المعاينة (يسار) — toggle فوري
     var col = $id('btn-collapse-info');
     if (col && !col.__b) {
       col.__b = true;
@@ -666,8 +664,156 @@
     console.log('[profile-actions] bound | mode=' + (isOwner ? 'owner' : 'visitor') + ' | preview=' + isPreview);
   }
 
+  /* ═══ Actions Menu (⋮) ═══ */
+  function handleAction(action, user) {
+    var uid = St.currentUid;
+    if (!uid) return;
+
+    if (action === 'pm') {
+      close();
+      try {
+        if (window.QamarNav && typeof window.QamarNav.openPM === 'function') {
+          window.QamarNav.openPM(uid);
+        } else {
+          emit('pm:open', { otherUid: uid });
+        }
+      } catch (e) {}
+      return;
+    }
+
+    if (action === 'frames') {
+      var FR = Core.P('QamarFrames');
+      if (!FR) { toast('محرر الإطارات غير متاح', 'error'); return; }
+      showFramesSelector(uid, user.avatarFrame);
+      return;
+    }
+
+    if (action === 'name-effect') {
+      var UI = Core.P('QamarNameEffectsUI');
+      if (!UI || typeof UI.open !== 'function') {
+        toast('محرر النمط غير متاح', 'error');
+        return;
+      }
+      try {
+        UI.open(uid);
+      } catch (e) {
+        console.error('open name-effect failed:', e);
+        toast('فشل فتح المحرر: ' + e.message, 'error');
+      }
+      return;
+    }
+
+    if (action === 'edit') {
+      toast('محرر التعديل قادم قريباً', 'info');
+      return;
+    }
+
+    if (action === 'add-friend') {
+      toast('قريباً', 'info');
+      return;
+    }
+
+    if (action === 'block') {
+      if (!window.QamarPM || typeof window.QamarPM.blockUser !== 'function') {
+        toast('غير متاح'); return;
+      }
+      if (!confirm('حظر ' + (user.name || '?') + '؟')) return;
+      window.QamarPM.blockUser(uid).then(function () {
+        toast('✅ تم الحظر', 'success');
+        close();
+      }).catch(function (e) { toast(e.message || 'فشل', 'error'); });
+      return;
+    }
+
+    if (action === 'report') {
+      toast('الإبلاغ قادم قريباً', 'info');
+      return;
+    }
+
+    if (action === 'jail') {
+      toast('استخدم غرفة الملك للسجن', 'info');
+      return;
+    }
+
+    if (action === 'promote') {
+      toast('استخدم غرفة الملك للترقية', 'info');
+      return;
+    }
+
+    if (action === 'gift') {
+      toast('استخدم غرفة الملك لإهداء النقاط', 'info');
+      return;
+    }
+  }
+
+  function showFramesSelector(uid, currentFrame) {
+    var FR = Core.P('QamarFrames');
+    var frames = (FR && FR.list) ? FR.list() : [];
+    if (!frames.length) { toast('لا توجد إطارات', 'error'); return; }
+
+    var ov = document.createElement('div');
+    ov.id = 'qp-frames-ov';
+    ov.style.cssText =
+      'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:17000;' +
+      'display:flex;align-items:center;justify-content:center;padding:20px;' +
+      'direction:rtl;font-family:inherit';
+
+    var card = document.createElement('div');
+    card.style.cssText =
+      'width:100%;max-width:400px;background:#0a0616;' +
+      'border:1px solid rgba(212,175,55,0.35);border-radius:18px;padding:16px;' +
+      'max-height:80vh;overflow-y:auto';
+
+    var grid = frames.map(function (f) {
+      var active = currentFrame === f.id;
+      return '<button class="qpf-tile" data-frame="' + esc(f.id) + '" type="button" ' +
+        'style="padding:14px 8px;border-radius:12px;background:rgba(255,255,255,0.04);' +
+        'border:2px solid ' + (active ? '#d4af37' : 'rgba(255,255,255,0.08)') + ';' +
+        'color:#f3f4f6;font-family:inherit;font-size:11px;font-weight:900;' +
+        'cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px">' +
+        '<span style="width:40px;height:40px;border-radius:50%;' +
+          'background:linear-gradient(135deg,' + f.colors.join(',') + ');' +
+          'display:block"></span>' +
+        '<span>' + esc(f.name) + '</span>' +
+      '</button>';
+    }).join('');
+
+    card.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+        '<div style="color:#d4af37;font-size:15px;font-weight:900">🎨 الإطارات</div>' +
+        '<button id="qpf-close" type="button" ' +
+          'style="width:30px;height:30px;border-radius:50%;background:transparent;' +
+          'border:1px solid rgba(255,255,255,0.1);color:#9ca3af;cursor:pointer;' +
+          'font-family:inherit">✕</button>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' + grid + '</div>';
+
+    ov.appendChild(card);
+    document.body.appendChild(ov);
+
+    card.querySelector('#qpf-close').addEventListener('click', function () { ov.remove(); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+
+    card.querySelectorAll('.qpf-tile').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var frameId = btn.getAttribute('data-frame');
+        var av = $id('qp-avatar');
+        if (av && FR && typeof FR.apply === 'function') {
+          FR.apply(av, frameId);
+        }
+        var ID = Core.P('QamarIdentity');
+        if (ID && typeof ID.setFrame === 'function') {
+          ID.setFrame(frameId).then(function () {
+            toast('✅ تم حفظ الإطار', 'success');
+          }).catch(function () { toast('فشل الحفظ', 'error'); });
+        }
+        ov.remove();
+      });
+    });
+  }
+
   window.QamarProfileActions = {
     bind: bind, showPage: showPage, openModal: openModal, saveAndRefresh: saveAndRefresh
   };
-  console.log('[profile-actions] ready');
+  console.log('[profile-actions] v1.1 ready');
 })();
