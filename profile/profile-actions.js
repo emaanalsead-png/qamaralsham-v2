@@ -592,8 +592,8 @@
     });
   }
 
+  /* ⭐ v3: toggle بدل إعادة تحميل */
   function bindChrome() {
-    // زر الإغلاق (يمين)
     var c = $id('btn-close');
     if (c && !c.__b) {
       c.__b = true;
@@ -607,24 +607,32 @@
       };
     }
 
-    // ⭐ زر المعاينة/الطي (يسار) — يستخدم location.href مباشرة
+    // ⭐ زر المعاينة (يسار) — toggle فوري
     var col = $id('btn-collapse-info');
     if (col && !col.__b) {
       col.__b = true;
-      col.title = (S.mode === 'owner') ? 'معاينة كزائر' : 'طي المعلومات';
+      col.title = 'معاينة كزائر';
+      col.innerHTML = '👁️';
       col.onclick = function (e) {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
 
-        if (S.mode === 'owner') {
-          toast('👁️ جاري فتح المعاينة...');
-          var url = location.pathname + '?uid=' + encodeURIComponent(S.uid) + '&preview=1&t=' + Date.now();
-          location.href = url;
+        var isOwner = document.body.classList.contains('owner-mode');
+        if (isOwner) {
+          document.body.classList.remove('owner-mode');
+          document.body.classList.add('visitor-mode');
+          col.title = 'رجوع لوضع المالك';
+          col.innerHTML = '👁️';
+          toast('👁️ معاينة كزائر');
         } else {
-          document.body.classList.toggle('visitor-collapsed');
-          var collapsed = document.body.classList.contains('visitor-collapsed');
-          toast(collapsed ? '👁️ طي' : '👁️ فتح');
+          document.body.classList.remove('visitor-mode');
+          document.body.classList.add('owner-mode');
+          col.title = 'معاينة كزائر';
+          col.innerHTML = '👁️';
+          toast('👑 وضع المالك');
         }
+        return false;
       };
     }
 
@@ -632,7 +640,7 @@
     if (u && !u.__b) {
       u.__b = true;
       u.onclick = function () {
-        if (S.mode === 'owner') {
+        if (document.body.classList.contains('owner-mode')) {
           var be = $id('btn-edit-username');
           if (be) be.click();
         }
