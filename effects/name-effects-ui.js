@@ -1,10 +1,9 @@
 /* ============================================================
    🌙 قمر الشام — effects/name-effects-ui.js
-   Version: 1.1 — إصلاح تصادم QamarNameEffects
+   Version: 1.1 — Namespace منفصل (QamarNameEffectsUI)
    ============================================================ */
 (function () {
   'use strict';
-  if (window.QamarNameEffectsUI) return;
 
   var VERSION = '1.1';
   var St = { inited: false, currentUid: null };
@@ -30,7 +29,7 @@
     { id: 'multicolor',       name: 'متعدد',      c1: '#ff0066', c2: '#a855f7', c3: '#00f3ff' },
     { id: 'hue-rotate',       name: 'تدوير',      c1: '#ff6b35', c2: '#a855f7', c3: '#06b6d4' },
     { id: 'diagonal-flow',    name: 'انسيابي',    c1: '#ff0080', c2: '#7928ca', c3: '#00d4ff' },
-    { id: 'silk',             name: 'حرير',       c1: '#e0ffff', c2: '#a855f7', c3: '#ff69b4' }
+    { id: 'silk',             name: 'حرير',      c1: '#e0ffff', c2: '#a855f7', c3: '#ff69b4' }
   ];
 
   var GLOWS = [
@@ -193,7 +192,6 @@
     });
 
     var preview = container.querySelector('#qne-preview-name');
-    var savedCfg = null;
 
     function applySelection(section, id) {
       var cfg = null;
@@ -212,25 +210,21 @@
         cfg = { mode: 'scene', scene: id, id: id };
       }
       if (!cfg) return;
-      savedCfg = cfg;
 
       apply(preview, cfg);
 
       try {
-        var db = window.firebase && window.firebase.apps && window.firebase.apps.length ?
-                 window.firebase.database() : null;
-        if (db && St.currentUid) {
-          db.ref('users/' + St.currentUid + '/nameEffects').set(cfg);
+        var fb = window.parent && window.parent.QamarFB;
+        if (fb && typeof fb.set === 'function' && St.currentUid) {
+          fb.set('users/' + St.currentUid + '/nameEffects', cfg);
         }
       } catch (err) {}
     }
 
     try {
-      var db2 = window.firebase && window.firebase.apps && window.firebase.apps.length ?
-                window.firebase.database() : null;
-      if (db2 && St.currentUid) {
-        db2.ref('users/' + St.currentUid + '/nameEffects').once('value').then(function (snap) {
-          var cfg = snap && snap.val ? snap.val() : null;
+      var fb2 = window.parent && window.parent.QamarFB;
+      if (fb2 && typeof fb2.get === 'function' && St.currentUid) {
+        fb2.get('users/' + St.currentUid + '/nameEffects').then(function (cfg) {
           if (cfg) apply(preview, cfg);
         });
       }
@@ -252,11 +246,6 @@
     div.className = 'qne-sec';
     div.style.marginBottom = '14px';
 
-    var secId = title === 'لون ثابت' ? 'solid' :
-                title === 'تدرجات متحركة' ? 'gradient' :
-                title === 'توهج' ? 'glow' :
-                title === 'تحويلات' ? 'transform' : 'scene';
-
     var html = '<div style="font-size:12px;font-weight:900;color:#9ca3af;' +
       'margin-bottom:8px;padding:0 4px">' + title + '</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));' +
@@ -270,7 +259,10 @@
     });
     html += '</div>';
     div.innerHTML = html;
-    div.setAttribute('data-sec', secId);
+    div.setAttribute('data-sec', title === 'لون ثابت' ? 'solid' :
+                                  title === 'تدرجات متحركة' ? 'gradient' :
+                                  title === 'توهج' ? 'glow' :
+                                  title === 'تحويلات' ? 'transform' : 'scene');
     return div;
   }
 
@@ -288,7 +280,8 @@
     console.log('[name-effects-ui] v' + VERSION + ' ready');
   }
 
-  window.QamarNameEffectsUI = {
+  /* ═══ Export: QamarNameEffectsUI (نطاق مستقل) ═══ */
+  var UI = {
     version: VERSION,
     open: buildUI,
     apply: apply,
@@ -300,6 +293,21 @@
     bgColors: BG_COLORS,
     init: init
   };
+  window.QamarNameEffectsUI = UI;
+
+  /* ═══ Backward-compat: إضافة .open للنسخة الموجودة (بدون كسر .apply) ═══ */
+  if (window.QamarNameEffects && typeof window.QamarNameEffects === 'object') {
+    if (!window.QamarNameEffects.open) window.QamarNameEffects.open = buildUI;
+    if (!window.QamarNameEffects.solidColors) window.QamarNameEffects.solidColors = SOLID_COLORS;
+    if (!window.QamarNameEffects.gradients) window.QamarNameEffects.gradients = GRADIENTS;
+    if (!window.QamarNameEffects.glows) window.QamarNameEffects.glows = GLOWS;
+    if (!window.QamarNameEffects.transforms) window.QamarNameEffects.transforms = TRANSFORMS;
+    if (!window.QamarNameEffects.scenes) window.QamarNameEffects.scenes = SCENES;
+    if (!window.QamarNameEffects.bgColors) window.QamarNameEffects.bgColors = BG_COLORS;
+  } else {
+    /* لا يوجد تصادم → سجّلنا كـ QamarNameEffects أيضاً */
+    window.QamarNameEffects = UI;
+  }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init, { once: true });
