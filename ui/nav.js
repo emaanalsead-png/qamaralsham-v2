@@ -1,11 +1,5 @@
 // ==============================================
-// ui/nav.js v2.2 — profile iframe support
-// Bottom Nav + Sidebars + Header buttons
-// ==============================================
-// يعتمد على: rooms.js + pm.js + auth.js + session.js + EventBus
-// يعطي: window.QamarNav
-// ==============================================
-// ⭐ v2.2: openProfile يستخدم profile/profile.html في iframe
+// ui/nav.js v2.2 — profile iframe + postMessage
 // ==============================================
 
 (function () {
@@ -717,6 +711,41 @@
     }
 
     /* ══════════════════════════════════════════════ */
+    /* Handle postMessage من iframe                    */
+    /* ══════════════════════════════════════════════ */
+    function _handleIframeMessage(e) {
+        var d = e.data || {};
+        if (d.action === 'closeProfile') {
+            var f = _byId('profile-frame-container');
+            if (f) f.classList.add('hidden');
+            var i = _byId('profile-iframe');
+            if (i) i.src = 'about:blank';
+            return;
+        }
+        if (d.action === 'openProfileAsVisitor' && d.uid) {
+            var i2 = _byId('profile-iframe');
+            if (i2) i2.src = 'profile/profile.html?uid=' + encodeURIComponent(d.uid) + '&preview=1&t=' + Date.now();
+            return;
+        }
+        if (d.action === 'openUserProfile' && d.uid) {
+            openProfile(d.uid, d.name || '');
+            return;
+        }
+        if (d.action === 'openPrivateChat' && d.uid) {
+            _openPM(d.uid);
+            return;
+        }
+        if (d.action === 'logout') {
+            try { if (window.QamarAuth && window.QamarAuth.signOut) window.QamarAuth.signOut(); } catch (err) {}
+            return;
+        }
+        if (d.action === 'toast' && d.message) {
+            _toast(d.message);
+            return;
+        }
+    }
+
+    /* ══════════════════════════════════════════════ */
     /* Badges                                          */
     /* ══════════════════════════════════════════════ */
     function _updateBadges() {
@@ -773,6 +802,8 @@
         _bindPMModal();
         _watchEvents();
 
+        window.addEventListener('message', _handleIframeMessage);
+
         setTimeout(_updateBadges, 3000);
         setInterval(_updateBadges, 30000);
 
@@ -800,7 +831,7 @@
     }
 
     /* ══════════════════════════════════════════════ */
-    /* openProfile — ⭐ v2.2: يستخدم iframe profile/  */
+    /* openProfile                                     */
     /* ══════════════════════════════════════════════ */
     function openProfile(uid, name) {
         if (!uid) uid = _getCurrentUid();
@@ -845,5 +876,5 @@
         }
     };
 
-    Logger.info('📦 [nav.js v2.2] loaded — profile iframe ready');
+    Logger.info('📦 [nav.js v2.2] loaded — postMessage ready');
 })();
