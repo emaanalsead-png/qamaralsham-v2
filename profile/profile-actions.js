@@ -1,4 +1,4 @@
-/* profile-actions.js — v1.1 (fixed window vs window.parent) */
+/* profile-actions.js — v3 (lock + lightweight selection) */
 (function () {
   'use strict';
 
@@ -7,6 +7,8 @@
   var $id = Core.$id, esc = Core.esc, toast = Core.toast;
   var S = Core.S;
   function P(name) { return Core.P(name); }
+
+  var _saving = false;
 
   function upload(file) {
     var U = P('QamarUploader');
@@ -25,7 +27,14 @@
     return fb.update('', patch).then(function () { return { ok: true }; });
   }
 
+  /* ⭐ v3: lock — لا حفظ متزامن */
   function saveAndRefresh(updates) {
+    if (_saving) {
+      console.log('[profile-actions] save skipped (busy)');
+      return Promise.resolve({ skipped: true });
+    }
+    _saving = true;
+
     return save(updates).then(function () {
       Object.keys(updates).forEach(function (k) { S.subject[k] = updates[k]; });
       Core.apply(S.subject);
@@ -33,7 +42,10 @@
     }).catch(function (e) {
       toast('⚠️ فشل: ' + (e.message || 'خطأ'));
       throw e;
-    });
+    }).then(
+      function (r) { _saving = false; return r; },
+      function (e) { _saving = false; throw e; }
+    );
   }
 
   function pickFile(inputId, onFile, maxMb) {
@@ -162,7 +174,18 @@
       el.className = 'name-grid-item' + (cur === c ? ' selected' : '');
       el.style.color = c;
       el.textContent = name;
-      el.onclick = function () { var u = {}; u[field] = c; saveAndRefresh(u).then(function () { renderColors(gridId, prevId, field); }); };
+      el.dataset.val = c;
+      el.onclick = function () {
+        /* ⭐ تحديث selected فقط — بدون إعادة رسم */
+        var prevSel = grid.querySelector('.selected');
+        if (prevSel) prevSel.classList.remove('selected');
+        el.classList.add('selected');
+        /* تحديث معاينة */
+        if (prev) prev.style.color = c;
+        /* حفظ */
+        var u = {}; u[field] = c;
+        saveAndRefresh(u);
+      };
       grid.appendChild(el);
     });
   }
@@ -195,7 +218,15 @@
       el.style.webkitTextFillColor = 'transparent';
       el.style.color = 'transparent';
       el.textContent = name;
-      el.onclick = function () { var u = {}; u[field] = g; saveAndRefresh(u).then(function () { renderGradients(gridId, prevId, field); }); };
+      el.onclick = function () {
+        /* ⭐ تحديث selected فقط */
+        var prevSel = grid.querySelector('.selected');
+        if (prevSel) prevSel.classList.remove('selected');
+        el.classList.add('selected');
+        /* حفظ */
+        var u = {}; u[field] = g;
+        saveAndRefresh(u);
+      };
       grid.appendChild(el);
     });
   }
@@ -213,7 +244,12 @@
       el.style.background = c;
       el.style.color = '#fff';
       el.textContent = name;
-      el.onclick = function () { saveAndRefresh({ nameBgColor: c }).then(renderBgColors); };
+      el.onclick = function () {
+        var prevSel = grid.querySelector('.selected');
+        if (prevSel) prevSel.classList.remove('selected');
+        el.classList.add('selected');
+        saveAndRefresh({ nameBgColor: c });
+      };
       grid.appendChild(el);
     });
   }
@@ -232,7 +268,12 @@
       el.style.background = 'linear-gradient(135deg,' + g[0] + ',' + g[1] + ')';
       el.style.color = '#fff';
       el.textContent = name;
-      el.onclick = function () { saveAndRefresh({ nameBgGradient: g }).then(renderBgGradients); };
+      el.onclick = function () {
+        var prevSel = grid.querySelector('.selected');
+        if (prevSel) prevSel.classList.remove('selected');
+        el.classList.add('selected');
+        saveAndRefresh({ nameBgGradient: g });
+      };
       grid.appendChild(el);
     });
   }
@@ -253,7 +294,7 @@
     none.className = 'frame-tile' + (!cur ? ' selected' : '');
     none.innerHTML = '<div class="frame-avatar"><img src="' + esc(avatarSrc) + '">' +
       '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);color:#888;font-size:22px;border-radius:50%">✕</div></div>';
-    none.onclick = function () { saveAndRefresh({ avatarFrame: null }).then(renderFrames); };
+    none.onclick = function () { saveAndRefresh({ avatarFrame: null }); };
     grid.appendChild(none);
 
     var list = typeof FR.list === 'function' ? FR.list() : [];
@@ -266,7 +307,7 @@
         'background:conic-gradient(from 0deg,' + colors.join(',') + ',' + colors[0] + ');' +
         '-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);' +
         '-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;z-index:2"></div></div>';
-      tile.onclick = function () { saveAndRefresh({ avatarFrame: f.id }).then(renderFrames); };
+      tile.onclick = function () { saveAndRefresh({ avatarFrame: f.id }); };
       grid.appendChild(tile);
     });
   }
@@ -281,7 +322,7 @@
       var t = document.createElement('div');
       t.className = 'glow-tile' + (cur === c ? ' selected' : '');
       t.innerHTML = '<div class="glow-circle" style="box-shadow:0 0 20px 5px ' + c + ',0 0 40px 10px ' + c + ';background:' + c + ';opacity:.6"></div>';
-      t.onclick = function () { saveAndRefresh({ profileGlow: c }).then(renderGlows); };
+      t.onclick = function () { saveAndRefresh({ profileGlow: c }); };
       grid.appendChild(t);
     });
   }
@@ -550,13 +591,13 @@
     if ((b = $id('btn-upload-music'))) b.onclick = function () { uploadField('music-file-input', 'musicURL', 10); };
     if ((b = $id('btn-upload-poetry-bg'))) b.onclick = function () { uploadField('poetry-bg-input', 'poetryBg', 5); };
     if ((b = $id('btn-upload-poetry-attach'))) b.onclick = function () { uploadField('poetry-attach-input', 'poetryAttachment', 5); };
-    if ((b = $id('btn-remove-avatar'))) b.onclick = function () { if (!confirm('إزالة؟')) return; saveAndRefresh({ avatar: null }).then(function () { renderPage('avatar-page'); }); };
-    if ((b = $id('btn-remove-cover'))) b.onclick = function () { if (!confirm('إزالة؟')) return; saveAndRefresh({ cover: null, coverType: null }).then(function () { renderPage('cover-page'); }); };
-    if ((b = $id('btn-remove-music'))) b.onclick = function () { if (!confirm('إزالة؟')) return; saveAndRefresh({ musicURL: null }).then(function () { renderPage('music'); }); };
-    if ((b = $id('btn-remove-frame'))) b.onclick = function () { saveAndRefresh({ avatarFrame: null }).then(renderFrames); };
-    if ((b = $id('btn-remove-glow'))) b.onclick = function () { saveAndRefresh({ profileGlow: null }).then(renderGlows); };
-    if ((b = $id('btn-remove-poetry-bg'))) b.onclick = function () { saveAndRefresh({ poetryBg: null }).then(renderPoetryPreviews); };
-    if ((b = $id('btn-remove-poetry-attach'))) b.onclick = function () { saveAndRefresh({ poetryAttachment: null }).then(renderPoetryPreviews); };
+    if ((b = $id('btn-remove-avatar'))) b.onclick = function () { if (!confirm('إزالة؟')) return; saveAndRefresh({ avatar: null }); };
+    if ((b = $id('btn-remove-cover'))) b.onclick = function () { if (!confirm('إزالة؟')) return; saveAndRefresh({ cover: null, coverType: null }); };
+    if ((b = $id('btn-remove-music'))) b.onclick = function () { if (!confirm('إزالة؟')) return; saveAndRefresh({ musicURL: null }); };
+    if ((b = $id('btn-remove-frame'))) b.onclick = function () { saveAndRefresh({ avatarFrame: null }); };
+    if ((b = $id('btn-remove-glow'))) b.onclick = function () { saveAndRefresh({ profileGlow: null }); };
+    if ((b = $id('btn-remove-poetry-bg'))) b.onclick = function () { saveAndRefresh({ poetryBg: null }); };
+    if ((b = $id('btn-remove-poetry-attach'))) b.onclick = function () { saveAndRefresh({ poetryAttachment: null }); };
     if ((b = $id('btn-remove-poetry'))) b.onclick = function () { if (!confirm('حذف الكل؟')) return; saveAndRefresh({ poetry: '', poetryBg: null, poetryAttachment: null }); };
     if ((b = $id('btn-save-poetry'))) b.onclick = function () {
       var inp = $id('poetry-input');
@@ -621,13 +662,11 @@
           document.body.classList.remove('owner-mode');
           document.body.classList.add('visitor-mode');
           col.title = 'رجوع لوضع المالك';
-          col.innerHTML = '👁️';
           toast('👁️ معاينة كزائر');
         } else {
           document.body.classList.remove('visitor-mode');
           document.body.classList.add('owner-mode');
           col.title = 'معاينة كزائر';
-          col.innerHTML = '👁️';
           toast('👑 وضع المالك');
         }
         return false;
@@ -664,156 +703,8 @@
     console.log('[profile-actions] bound | mode=' + (isOwner ? 'owner' : 'visitor') + ' | preview=' + isPreview);
   }
 
-  /* ═══ Actions Menu (⋮) ═══ */
-  function handleAction(action, user) {
-    var uid = St.currentUid;
-    if (!uid) return;
-
-    if (action === 'pm') {
-      close();
-      try {
-        if (window.QamarNav && typeof window.QamarNav.openPM === 'function') {
-          window.QamarNav.openPM(uid);
-        } else {
-          emit('pm:open', { otherUid: uid });
-        }
-      } catch (e) {}
-      return;
-    }
-
-    if (action === 'frames') {
-      var FR = Core.P('QamarFrames');
-      if (!FR) { toast('محرر الإطارات غير متاح', 'error'); return; }
-      showFramesSelector(uid, user.avatarFrame);
-      return;
-    }
-
-    if (action === 'name-effect') {
-      var UI = Core.P('QamarNameEffectsUI');
-      if (!UI || typeof UI.open !== 'function') {
-        toast('محرر النمط غير متاح', 'error');
-        return;
-      }
-      try {
-        UI.open(uid);
-      } catch (e) {
-        console.error('open name-effect failed:', e);
-        toast('فشل فتح المحرر: ' + e.message, 'error');
-      }
-      return;
-    }
-
-    if (action === 'edit') {
-      toast('محرر التعديل قادم قريباً', 'info');
-      return;
-    }
-
-    if (action === 'add-friend') {
-      toast('قريباً', 'info');
-      return;
-    }
-
-    if (action === 'block') {
-      if (!window.QamarPM || typeof window.QamarPM.blockUser !== 'function') {
-        toast('غير متاح'); return;
-      }
-      if (!confirm('حظر ' + (user.name || '?') + '؟')) return;
-      window.QamarPM.blockUser(uid).then(function () {
-        toast('✅ تم الحظر', 'success');
-        close();
-      }).catch(function (e) { toast(e.message || 'فشل', 'error'); });
-      return;
-    }
-
-    if (action === 'report') {
-      toast('الإبلاغ قادم قريباً', 'info');
-      return;
-    }
-
-    if (action === 'jail') {
-      toast('استخدم غرفة الملك للسجن', 'info');
-      return;
-    }
-
-    if (action === 'promote') {
-      toast('استخدم غرفة الملك للترقية', 'info');
-      return;
-    }
-
-    if (action === 'gift') {
-      toast('استخدم غرفة الملك لإهداء النقاط', 'info');
-      return;
-    }
-  }
-
-  function showFramesSelector(uid, currentFrame) {
-    var FR = Core.P('QamarFrames');
-    var frames = (FR && FR.list) ? FR.list() : [];
-    if (!frames.length) { toast('لا توجد إطارات', 'error'); return; }
-
-    var ov = document.createElement('div');
-    ov.id = 'qp-frames-ov';
-    ov.style.cssText =
-      'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:17000;' +
-      'display:flex;align-items:center;justify-content:center;padding:20px;' +
-      'direction:rtl;font-family:inherit';
-
-    var card = document.createElement('div');
-    card.style.cssText =
-      'width:100%;max-width:400px;background:#0a0616;' +
-      'border:1px solid rgba(212,175,55,0.35);border-radius:18px;padding:16px;' +
-      'max-height:80vh;overflow-y:auto';
-
-    var grid = frames.map(function (f) {
-      var active = currentFrame === f.id;
-      return '<button class="qpf-tile" data-frame="' + esc(f.id) + '" type="button" ' +
-        'style="padding:14px 8px;border-radius:12px;background:rgba(255,255,255,0.04);' +
-        'border:2px solid ' + (active ? '#d4af37' : 'rgba(255,255,255,0.08)') + ';' +
-        'color:#f3f4f6;font-family:inherit;font-size:11px;font-weight:900;' +
-        'cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px">' +
-        '<span style="width:40px;height:40px;border-radius:50%;' +
-          'background:linear-gradient(135deg,' + f.colors.join(',') + ');' +
-          'display:block"></span>' +
-        '<span>' + esc(f.name) + '</span>' +
-      '</button>';
-    }).join('');
-
-    card.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
-        '<div style="color:#d4af37;font-size:15px;font-weight:900">🎨 الإطارات</div>' +
-        '<button id="qpf-close" type="button" ' +
-          'style="width:30px;height:30px;border-radius:50%;background:transparent;' +
-          'border:1px solid rgba(255,255,255,0.1);color:#9ca3af;cursor:pointer;' +
-          'font-family:inherit">✕</button>' +
-      '</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' + grid + '</div>';
-
-    ov.appendChild(card);
-    document.body.appendChild(ov);
-
-    card.querySelector('#qpf-close').addEventListener('click', function () { ov.remove(); });
-    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
-
-    card.querySelectorAll('.qpf-tile').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var frameId = btn.getAttribute('data-frame');
-        var av = $id('qp-avatar');
-        if (av && FR && typeof FR.apply === 'function') {
-          FR.apply(av, frameId);
-        }
-        var ID = Core.P('QamarIdentity');
-        if (ID && typeof ID.setFrame === 'function') {
-          ID.setFrame(frameId).then(function () {
-            toast('✅ تم حفظ الإطار', 'success');
-          }).catch(function () { toast('فشل الحفظ', 'error'); });
-        }
-        ov.remove();
-      });
-    });
-  }
-
   window.QamarProfileActions = {
     bind: bind, showPage: showPage, openModal: openModal, saveAndRefresh: saveAndRefresh
   };
-  console.log('[profile-actions] v1.1 ready');
+  console.log('[profile-actions] v3 ready');
 })();
